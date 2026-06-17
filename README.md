@@ -39,9 +39,12 @@ npm i -g vizzy-cli && vizzy
 | Flag | Effect |
 |---|---|
 | `--private` / `--public` | Preselect the target and skip step 1 |
-| `--dry-run` | Preview changes without applying them |
+| `--dry-run` | Preview changes without applying them (conflicts with `--audit`) |
 | `--include-archived` | Include archived repos (GitHub may reject the change) |
 | `--no-forks` | Exclude forked repos (forks are included by default) |
+| `--force-public` | Skip per-repo name confirmation for danger repos when going public |
+| `--no-protect` | Ignore `.vizzyignore` protected-repos list |
+| `--audit` | Non-interactive audit: report public-repo exposure risk and exit (conflicts with `--dry-run`) |
 | `-h, --help` / `-v, --version` | Standard |
 
 ## How it works

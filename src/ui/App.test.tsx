@@ -23,7 +23,7 @@ const repo = (name: string, v: Repo['visibility']): Repo => ({
   license: null,
 });
 
-const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, ...over });
+const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, protect: true, ...over });
 
 // Search the full frame history (not just lastFrame): Ink clears the frame on
 // unmount, so a completed flow's content lives in `frames`, not the last frame.

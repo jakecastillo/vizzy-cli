@@ -23,4 +23,42 @@ describe('parseArgs', () => {
   it('rejects --public together with --private', () => {
     expect(() => parseArgs(['--public', '--private'], { exitOverride: true })).toThrow();
   });
+
+  // --- new flags (bead vizzy-cli-6qi.6) ---
+
+  it('parses --force-public as forcePublic=true', () => {
+    const f = parseArgs(['--force-public']);
+    expect(f.forcePublic).toBe(true);
+  });
+
+  it('forcePublic defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.forcePublic).toBeUndefined();
+  });
+
+  it('protect defaults to true (--no-protect not passed)', () => {
+    const f = parseArgs([]);
+    expect(f.protect).toBe(true);
+  });
+
+  it('sets protect=false when --no-protect is passed', () => {
+    const f = parseArgs(['--no-protect']);
+    expect(f.protect).toBe(false);
+  });
+
+  it('parses --audit as audit=true', () => {
+    const f = parseArgs(['--audit']);
+    expect(f.audit).toBe(true);
+  });
+
+  it('audit defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.audit).toBeUndefined();
+  });
+
+  it('rejects --audit together with --dry-run', () => {
+    expect(() =>
+      parseArgs(['--audit', '--dry-run'], { exitOverride: true }),
+    ).toThrow();
+  });
 });

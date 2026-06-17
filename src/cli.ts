@@ -11,6 +11,9 @@ export interface CliFlags {
   dryRun?: boolean;
   includeArchived?: boolean;
   forks: boolean;
+  forcePublic?: boolean;
+  protect: boolean;
+  audit?: boolean;
 }
 
 export function parseArgs(
@@ -25,9 +28,12 @@ export function parseArgs(
     .version(pkg.version, '-v, --version', 'output the current version')
     .addOption(new Option('--public', 'target visibility: public').conflicts('private'))
     .addOption(new Option('--private', 'target visibility: private').conflicts('public'))
-    .option('--dry-run', 'preview changes without applying them')
+    .addOption(new Option('--dry-run', 'preview changes without applying them').conflicts('audit'))
     .option('--include-archived', 'include archived repositories')
-    .option('--no-forks', 'exclude forked repositories');
+    .option('--no-forks', 'exclude forked repositories')
+    .option('--force-public', 'skip per-repo name confirmation for danger repos when going public')
+    .option('--no-protect', 'ignore .vizzyignore protected-repos list')
+    .addOption(new Option('--audit', 'non-interactive audit: report public repo exposure risk and exit').conflicts('dryRun'));
 
   if (opts.exitOverride) program.exitOverride();
 
