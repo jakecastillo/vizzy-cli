@@ -90,6 +90,9 @@ describe('classifyPath — credentials', () => {
   it('flags secrets.json', () => expectHit('secrets.json', 'cred'));
   it('flags secrets.env', () => expectHit('secrets.env', 'cred'));
   it('flags secrets (bare)', () => expectHit('secrets', 'cred'));
+  // Regression (jd9/uov): "example" without a following dot is NOT a sample file.
+  it('flags secrets.example2.json', () => expectHit('secrets.example2.json', 'cred'));
+  it('flags secrets.examplefile.json', () => expectHit('secrets.examplefile.json', 'cred'));
 
   // --- exclusions ---
   it('spares secrets.example.json', () => expectClean('secrets.example.json'));

@@ -106,7 +106,9 @@ const RULES: Rule[] = [
       if (b.startsWith('secrets.')) {
         // e.g. "secrets.example.json" — the part after "secrets." starts with "example"
         const afterSecrets = b.slice('secrets.'.length);
-        if (afterSecrets.startsWith('example')) return false;
+        // Only "secrets.example" or "secrets.example.<ext>" are conventional samples;
+        // "secrets.example2.json" / "secrets.examplefile.json" are real and must flag.
+        if (afterSecrets === 'example' || afterSecrets.startsWith('example.')) return false;
         return true;
       }
 
