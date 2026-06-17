@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "vizzy_cli",
+  "project_id": "4eb760ce-e609-4cf5-a750-19f00e1c7460"
+}
