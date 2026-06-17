@@ -1,0 +1,52 @@
+name: 🐛 Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug! Please fill out the details below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce it? Include the exact command you ran.
+      placeholder: |
+        1. Run `vizzy --dry-run`
+        2. Select ...
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: vizzy-version
+    attributes:
+      label: vizzy version
+      description: Output of `vizzy --version`
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.x / Ubuntu 24.04 / Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Paste any relevant terminal output. Do NOT paste tokens or secrets.
+      render: shell
