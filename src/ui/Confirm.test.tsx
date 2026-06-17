@@ -224,6 +224,28 @@ describe('Confirm — public target, caution batch (must type "public")', () => 
     expect(onConfirm).toHaveBeenCalledWith([r]);
     unmount();
   });
+
+  it('Backspace corrects a mistyped token (caution batch)', async () => {
+    const r = repo('stale-repo', 'private');
+    const plan = buildPlan('public', [r]);
+    const assessments = [cautionAssessment(r)];
+    const onConfirm = vi.fn();
+    const { stdin, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={onConfirm} />,
+    );
+    await delay();
+    // Mistype "publix", Backspace the stray 'x', then finish with 'c' → "public".
+    for (const ch of 'publix') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.backspace);
+    await delay();
+    stdin.write('c');
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    expect(onConfirm).toHaveBeenCalledWith([r]);
+    unmount();
+  });
 });
 
 describe('Confirm — public target, danger batch (arm-by-name)', () => {
@@ -249,6 +271,28 @@ describe('Confirm — public target, danger batch (arm-by-name)', () => {
     );
     await delay();
     for (const ch of 'secret-repo') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    expect(onConfirm).toHaveBeenCalledWith([r]);
+    unmount();
+  });
+
+  it('Backspace lets the user correct a mistyped danger repo name before arming', async () => {
+    const r = repo('secret-repo', 'private');
+    const plan = buildPlan('public', [r]);
+    const assessments = [dangerAssessment(r)];
+    const onConfirm = vi.fn();
+    const { stdin, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={onConfirm} />,
+    );
+    await delay();
+    // Mistype the name "secret-repX", Backspace the 'X', finish with 'o' → arms "secret-repo".
+    for (const ch of 'secret-repX') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.backspace);
+    await delay();
+    stdin.write('o');
     await delay();
     stdin.write(KEY.enter);
     await delay();
@@ -288,19 +332,20 @@ describe('Confirm — public target, danger batch (arm-by-name)', () => {
     unmount();
   });
 
-  it('shows "skipped" label for unarmed danger repos after confirm', async () => {
+  it('renders the "skipped — likely secret" label for an unarmed danger repo and excludes it on submit', async () => {
     const danger = repo('secret-repo', 'private');
     const plan = buildPlan('public', [danger]);
     const assessments = [dangerAssessment(danger)];
     const onConfirm = vi.fn();
-    const { stdin, unmount } = render(
+    const { stdin, lastFrame, unmount } = render(
       <Confirm plan={plan} assessments={assessments} onConfirm={onConfirm} />,
     );
     await delay();
-    // Submit without arming — results in empty apply (cancel)
+    // The unarmed danger repo is visibly marked as skipped (the named scenario).
+    expect(lastFrame()).toContain('skipped');
+    // Submitting without arming excludes it → empty apply (cancel).
     stdin.write(KEY.enter);
     await delay();
-    // onConfirm called with empty array (cancel — all danger repos unarmed)
     expect(onConfirm).toHaveBeenCalledWith([]);
     unmount();
   });
