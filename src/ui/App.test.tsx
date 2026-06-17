@@ -5,10 +5,12 @@ import { delay, waitFor, KEY } from '../test-utils.js';
 import type { Repo } from '../types.js';
 import type { CliFlags } from '../cli.js';
 import type { TreeFetcher } from '../core/scan.js';
+import * as scanModule from '../core/scan.js';
 
 // Defensive: App never mutates process.exitCode (it uses the onComplete prop),
 // but reset anyway so no test can leak a non-zero code into the vitest runner.
 afterEach(() => {
+  vi.restoreAllMocks();
   process.exitCode = 0;
 });
 
@@ -248,6 +250,51 @@ describe('App', () => {
     stdin.write('y');
     await waitFor(() => onComplete.mock.calls.length > 0);
     expect(setter).toHaveBeenCalledWith('me', 'priv-a', 'public');
+    unmount();
+  });
+
+  it('public flow: an assessRepos crash (outer catch) surfaces the error, excludes protected repos, and reaches confirm', async () => {
+    // Force the defensive outer catch: assessRepos itself throws (not a per-repo
+    // rejection, which it isolates internally). The TUI must not strand; it must
+    // surface the error, keep protected repos excluded, and proceed to confirm.
+    const spy = vi.spyOn(scanModule, 'assessRepos').mockRejectedValue(new Error('boom'));
+    const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockResolvedValue([
+      repo('priv-a', 'private'),
+      repo('secret-repo', 'private'),
+    ]);
+
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        flags={flags({ public: true })}
+        loadRepos={loadRepos}
+        setter={setter}
+        onComplete={onComplete}
+        treeFetch={treeFetch}
+        protectPatterns={['secret-repo']}
+      />,
+    );
+
+    await waitFor(() => (lastFrame() ?? '').includes('priv-a'));
+    await delay(100);
+    stdin.write('a'); // select all
+    await waitFor(() => (lastFrame() ?? '').includes('2 selected'));
+    stdin.write(KEY.enter);
+
+    // Outer catch reached: confirm shown (not stranded) and the error is surfaced.
+    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    expect(lastFrame() ?? '').toContain('Scan incomplete');
+
+    // The protected repo must NOT reach apply, even on the crash path.
+    await delay(100);
+    stdin.write('y');
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    const applied = (setter as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(applied).toContain('priv-a');
+    expect(applied).not.toContain('secret-repo');
+    spy.mockRestore();
     unmount();
   });
 
