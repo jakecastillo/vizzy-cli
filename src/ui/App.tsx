@@ -265,21 +265,23 @@ export function App({
           plan={buildPlan(target, selected)}
           dryRun={flags.dryRun}
           assessments={assessments}
-          onConfirm={(yes) => {
-          if (!yes) {
-            setSummary('Cancelled.');
-            setStage('done');
-            onComplete(0);
-            setTimeout(exit, 0);
-          } else if (flags.dryRun) {
-            setSummary(`[dry-run] Would change ${selected.length} repo(s) to ${target}.`);
-            setStage('done');
-            onComplete(0);
-            setTimeout(exit, 0);
-          } else {
-            setStage('applying');
-          }
-        }}
+          forcePublic={flags.forcePublic}
+          onConfirm={(reposToApply) => {
+            if (reposToApply.length === 0) {
+              setSummary('Cancelled.');
+              setStage('done');
+              onComplete(0);
+              setTimeout(exit, 0);
+            } else if (flags.dryRun) {
+              setSummary(`[dry-run] Would change ${reposToApply.length} repo(s) to ${target}.`);
+              setStage('done');
+              onComplete(0);
+              setTimeout(exit, 0);
+            } else {
+              setSelected(reposToApply);
+              setStage('applying');
+            }
+          }}
         />
       </Box>
     );

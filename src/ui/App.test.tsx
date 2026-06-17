@@ -33,6 +33,24 @@ const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, protec
 const seen = (frames: string[], text: string): boolean =>
   frames.some((f) => f.toLowerCase().includes(text.toLowerCase()));
 
+// Helper: wait for any confirm screen (private shows "Proceed?"; public shows
+// the typed-confirm prompt). Match either so private tests remain unchanged.
+const waitForConfirm = (lastFrame: () => string | undefined, _frames: string[]): Promise<void> =>
+  waitFor(() =>
+    (lastFrame() ?? '').includes('Proceed?') ||
+    (lastFrame() ?? '').toLowerCase().includes('"public" to confirm') ||
+    (lastFrame() ?? '').toLowerCase().includes('type a danger repo name') ||
+    (lastFrame() ?? '').toLowerCase().includes('armed. type'),
+  );
+
+// Type 'public' then Enter — used for public caution/force-public confirm screens.
+const typePublic = async (stdin: { write: (s: string) => void }): Promise<void> => {
+  for (const ch of 'public') stdin.write(ch);
+  await delay(25);
+  stdin.write(KEY.enter);
+  await delay(25);
+};
+
 describe('App', () => {
   it('runs the full private flow and applies the selection', async () => {
     const setter = vi.fn().mockResolvedValue(undefined);
@@ -136,6 +154,8 @@ describe('App', () => {
 
   it('public flow: passes through scanning stage and reaches confirm', async () => {
     // The stub treeFetch returns an empty tree for every repo (no findings).
+    // repo() fixture has pushedAt:'2024-01-01' and license:null → CAUTION (stale + no-license).
+    // The new typed confirm requires typing 'public' + Enter, not just 'y'.
     const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
     const setter = vi.fn().mockResolvedValue(undefined);
     const onComplete = vi.fn();
@@ -163,19 +183,22 @@ describe('App', () => {
     await waitFor(() => seen(frames, 'Checking'));
 
     // After scanning completes, the confirm screen should appear.
-    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    // repo is CAUTION (stale + no-license), so the prompt shows the typed confirm.
+    await waitForConfirm(lastFrame, frames);
 
     // treeFetch was called for the selected repo.
     expect(treeFetch).toHaveBeenCalled();
 
+    // Confirm with 'public' + Enter (caution batch requires the phrase token).
     await delay(100);
-    stdin.write('y');
+    await typePublic(stdin);
     await waitFor(() => onComplete.mock.calls.length > 0);
     expect(setter).toHaveBeenCalledWith('me', 'priv-a', 'public');
     unmount();
   });
 
   it('public flow with protected repo: shows protected notice and excludes the protected repo', async () => {
+    // repo() fixture → CAUTION (stale + no-license) → requires typing 'public' to confirm.
     const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
     const setter = vi.fn().mockResolvedValue(undefined);
     const onComplete = vi.fn();
@@ -206,19 +229,27 @@ describe('App', () => {
     // Protected notice should appear during scanning.
     await waitFor(() => seen(frames, 'protected'));
 
-    // After scanning, confirm should appear.
-    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    // After scanning, confirm should appear (caution batch → typed confirm).
+    await waitForConfirm(lastFrame, frames);
 
     // Only priv-a should have been scanned, not secret-repo.
     const calls = (treeFetch as ReturnType<typeof vi.fn>).mock.calls as [Repo][];
     expect(calls.every((c) => c[0].name !== 'secret-repo')).toBe(true);
 
+    // Confirm with 'public' — only priv-a (not the protected secret-repo) is applied.
+    await delay(100);
+    await typePublic(stdin);
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    const applied = (setter as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(applied).toContain('priv-a');
+    expect(applied).not.toContain('secret-repo');
     unmount();
   });
 
   it('public flow: a rejecting treeFetch degrades gracefully and still reaches confirm', async () => {
     // A failing scan must NOT abort the TUI. assessRepos isolates the per-repo
-    // rejection (→ scan-incomplete); the app advances to confirm and stays operable.
+    // rejection (→ scan-incomplete caution); the app advances to confirm.
+    // repo() fixture → CAUTION (stale + no-license + scan-incomplete) → typed confirm.
     const treeFetch: TreeFetcher = vi.fn().mockRejectedValue(new Error('network down'));
     const setter = vi.fn().mockResolvedValue(undefined);
     const onComplete = vi.fn();
@@ -242,12 +273,12 @@ describe('App', () => {
     stdin.write(KEY.enter); // submit → scanning
 
     // (1) does not crash and (2) advances to confirm despite the scan failure.
-    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    await waitForConfirm(lastFrame, []);
     expect(treeFetch).toHaveBeenCalled();
 
-    // (3) the flow remains operable end-to-end and onComplete eventually fires.
+    // (3) the flow remains operable end-to-end: type 'public' + Enter to confirm.
     await delay(100);
-    stdin.write('y');
+    await typePublic(stdin);
     await waitFor(() => onComplete.mock.calls.length > 0);
     expect(setter).toHaveBeenCalledWith('me', 'priv-a', 'public');
     unmount();
@@ -257,6 +288,7 @@ describe('App', () => {
     // Force the defensive outer catch: assessRepos itself throws (not a per-repo
     // rejection, which it isolates internally). The TUI must not strand; it must
     // surface the error, keep protected repos excluded, and proceed to confirm.
+    // Fallback assessments = scan-incomplete caution → typed confirm with 'public'.
     const spy = vi.spyOn(scanModule, 'assessRepos').mockRejectedValue(new Error('boom'));
     const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
     const setter = vi.fn().mockResolvedValue(undefined);
@@ -284,12 +316,13 @@ describe('App', () => {
     stdin.write(KEY.enter);
 
     // Outer catch reached: confirm shown (not stranded) and the error is surfaced.
-    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    await waitForConfirm(lastFrame, []);
     expect(lastFrame() ?? '').toContain('Scan incomplete');
 
     // The protected repo must NOT reach apply, even on the crash path.
+    // Confirm with 'public' (fallback assessments are caution → typed confirm).
     await delay(100);
-    stdin.write('y');
+    await typePublic(stdin);
     await waitFor(() => onComplete.mock.calls.length > 0);
     const applied = (setter as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
     expect(applied).toContain('priv-a');
@@ -299,6 +332,7 @@ describe('App', () => {
   });
 
   it('public flow: flags.protect===false skips protected filtering', async () => {
+    // repo() fixture → CAUTION → typed confirm required.
     const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
     const loadRepos = vi.fn().mockResolvedValue([
       repo('priv-a', 'private'),
@@ -322,7 +356,7 @@ describe('App', () => {
     await waitFor(() => (lastFrame() ?? '').includes('2 selected'));
     stdin.write(KEY.enter);
 
-    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    await waitForConfirm(lastFrame, []);
 
     // Both repos must have been scanned (no filtering).
     expect((treeFetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
