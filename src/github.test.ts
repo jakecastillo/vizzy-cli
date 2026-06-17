@@ -3,6 +3,7 @@ import { RequestError } from '@octokit/request-error';
 import {
   normalizeRepo,
   listOwnerRepos,
+  listRepoTree,
   setVisibility,
   explainError,
   makeSetter,
@@ -17,6 +18,8 @@ const raw = (over: Partial<RawRepo> = {}): RawRepo => ({
   archived: false,
   stargazers_count: 3,
   pushed_at: '2024-01-01T00:00:00Z',
+  default_branch: 'main',
+  license: { spdx_id: 'MIT' },
   ...over,
 });
 
@@ -36,6 +39,29 @@ describe('normalizeRepo', () => {
     const r = normalizeRepo(raw({ name: 'x', fork: true, pushed_at: null, stargazers_count: 9 }));
     expect(r).toMatchObject({ name: 'x', owner: 'me', isFork: true, stars: 9 });
     expect(typeof r.pushedAt).toBe('string');
+  });
+
+  it('maps defaultBranch from default_branch', () => {
+    expect(normalizeRepo(raw({ default_branch: 'trunk' })).defaultBranch).toBe('trunk');
+  });
+
+  it('falls back defaultBranch to HEAD when default_branch is absent', () => {
+    const r = raw();
+    // Simulate absence by casting to unknown
+    const rawNoDefault = { ...r, default_branch: undefined } as unknown as RawRepo;
+    expect(normalizeRepo(rawNoDefault).defaultBranch).toBe('HEAD');
+  });
+
+  it('maps license spdx_id to license string', () => {
+    expect(normalizeRepo(raw({ license: { spdx_id: 'Apache-2.0' } })).license).toBe('Apache-2.0');
+  });
+
+  it('maps null spdx_id to null license', () => {
+    expect(normalizeRepo(raw({ license: { spdx_id: null } })).license).toBeNull();
+  });
+
+  it('maps absent license to null', () => {
+    expect(normalizeRepo(raw({ license: null })).license).toBeNull();
   });
 });
 
@@ -85,5 +111,86 @@ describe('makeSetter', () => {
     const update = vi.fn().mockRejectedValue(reqError(403));
     const setter = makeSetter({ rest: { repos: { update } } } as never);
     await expect(setter('me', 'r', 'public')).rejects.toThrow(/scope/);
+  });
+});
+
+describe('listRepoTree', () => {
+  const makeOctokit = (result: unknown) => ({
+    rest: {
+      git: {
+        getTree: vi.fn().mockResolvedValue({ data: result }),
+      },
+    },
+  });
+
+  it('returns blob paths only and the truncated flag', async () => {
+    const octokit = makeOctokit({
+      truncated: false,
+      tree: [
+        { path: 'src/index.ts', type: 'blob' },
+        { path: 'src', type: 'tree' },
+        { path: 'README.md', type: 'blob' },
+      ],
+    });
+    const result = await listRepoTree(octokit as never, 'me', 'r', 'main');
+    expect(result).toEqual({ paths: ['src/index.ts', 'README.md'], truncated: false });
+  });
+
+  it('sets truncated: true when the API reports truncation', async () => {
+    const octokit = makeOctokit({
+      truncated: true,
+      tree: [{ path: 'big-file.ts', type: 'blob' }],
+    });
+    const result = await listRepoTree(octokit as never, 'me', 'r', 'main');
+    expect(result.truncated).toBe(true);
+  });
+
+  it('propagates a 404 (ref not found) so it becomes scan-incomplete, NOT a clean all-clear', async () => {
+    // A 404 means the tree_sha/ref did not resolve (stale or wrong default branch,
+    // or no access) — we never actually scanned the repo. It must propagate so the
+    // scan layer marks the repo scan-incomplete (caution), never silently clean.
+    const octokit = {
+      rest: {
+        git: {
+          getTree: vi.fn().mockRejectedValue(reqError(404)),
+        },
+      },
+    };
+    await expect(listRepoTree(octokit as never, 'me', 'r', 'main')).rejects.toBeTruthy();
+  });
+
+  it('returns empty result on 409 (empty repo — git database not initialized)', async () => {
+    const octokit = {
+      rest: {
+        git: {
+          getTree: vi.fn().mockRejectedValue(reqError(409)),
+        },
+      },
+    };
+    const result = await listRepoTree(octokit as never, 'me', 'r', 'main');
+    expect(result).toEqual({ paths: [], truncated: false });
+  });
+
+  it('propagates other errors', async () => {
+    const octokit = {
+      rest: {
+        git: {
+          getTree: vi.fn().mockRejectedValue(reqError(500)),
+        },
+      },
+    };
+    await expect(listRepoTree(octokit as never, 'me', 'r', 'main')).rejects.toThrow();
+  });
+
+  it('calls the tree endpoint with recursive=1', async () => {
+    const getTree = vi.fn().mockResolvedValue({ data: { truncated: false, tree: [] } });
+    const octokit = { rest: { git: { getTree } } };
+    await listRepoTree(octokit as never, 'me', 'my-repo', 'develop');
+    expect(getTree).toHaveBeenCalledWith({
+      owner: 'me',
+      repo: 'my-repo',
+      tree_sha: 'develop',
+      recursive: '1',
+    });
   });
 });

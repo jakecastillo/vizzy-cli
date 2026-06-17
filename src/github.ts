@@ -14,6 +14,8 @@ export interface RawRepo {
   archived: boolean;
   stargazers_count: number;
   pushed_at: string | null;
+  default_branch: string;
+  license: { spdx_id: string | null } | null;
 }
 
 export function normalizeRepo(raw: RawRepo): Repo {
@@ -25,7 +27,41 @@ export function normalizeRepo(raw: RawRepo): Repo {
     isArchived: raw.archived,
     stars: raw.stargazers_count,
     pushedAt: raw.pushed_at ?? '1970-01-01T00:00:00Z',
+    defaultBranch: raw.default_branch ?? 'HEAD',
+    license: raw.license?.spdx_id ?? null,
   };
+}
+
+export async function listRepoTree(
+  octokit: Pick<Octokit, 'rest'>,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<{ paths: string[]; truncated: boolean }> {
+  try {
+    const { data } = await octokit.rest.git.getTree({
+      owner,
+      repo,
+      tree_sha: ref,
+      recursive: '1',
+    });
+    const paths = data.tree
+      .filter((item) => item.type === 'blob')
+      .map((item) => item.path!)
+      .filter((p): p is string => typeof p === 'string');
+    return { paths, truncated: data.truncated ?? false };
+  } catch (err) {
+    const httpErr = asHttpError(err);
+    // 409 = the repo is genuinely EMPTY (no commits) → nothing to expose, a real
+    // all-clear. A 404 means the ref/tree was NOT found (a stale or wrong default
+    // branch, or no access) — we did NOT actually scan the repo, so it must
+    // propagate and become a scan-incomplete (caution) upstream, never a silent
+    // all-clear. Same for every other status.
+    if (httpErr && httpErr.status === 409) {
+      return { paths: [], truncated: false };
+    }
+    throw err;
+  }
 }
 
 export async function listOwnerRepos(

@@ -1,6 +1,6 @@
 {
   "name": "vizzy-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bulk-toggle the visibility of your personal GitHub repos via an interactive TUI",
   "author": "Jake Castillo",
   "homepage": "https://github.com/jakecastillo/vizzy-cli#readme",

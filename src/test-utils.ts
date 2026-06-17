@@ -29,6 +29,9 @@ export async function waitFor(
 // Arrow keys MUST include the leading ESC byte (0x1B) or Ink's input parser
 // ignores them. Enter is '\r' (carriage return), NOT '\n'.
 const ESC = String.fromCharCode(27);
+// DEL (0x7F) — what most terminals send for the Backspace key; Ink maps it to
+// key.backspace/key.delete, both of which the typed-confirm buffer handles.
+const DEL = String.fromCharCode(127);
 
 export const KEY = {
   up: `${ESC}[A`,
@@ -37,4 +40,5 @@ export const KEY = {
   right: `${ESC}[C`,
   enter: '\r',
   space: ' ',
+  backspace: DEL,
 };
