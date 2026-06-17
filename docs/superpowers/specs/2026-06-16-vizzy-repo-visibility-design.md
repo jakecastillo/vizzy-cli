@@ -111,7 +111,8 @@ src/
   - `setVisibility(owner, repo, visibility)` →
     `PATCH /repos/{owner}/{repo}` with `{ visibility }`.
 - **`core/filter.ts`** — `eligibleRepos(repos, target)` returns repos whose
-  current visibility differs from `target` (pure, sorted for stable display).
+  current visibility differs from `target`, sorted by `pushedAt` descending
+  (most recently pushed first) for a stable, useful default order (pure).
 - **`core/plan.ts`** — builds the change plan from the user's selection and
   formats the confirmation summary string (pure).
 - **`ui/App.tsx`** — owns the state machine and orchestrates the modules;
