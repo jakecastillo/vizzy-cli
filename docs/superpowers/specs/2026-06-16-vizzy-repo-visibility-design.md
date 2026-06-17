@@ -43,6 +43,28 @@ These are deferrable; none are required for the first release.
 | Safety gate | Summary confirm + `--dry-run`; public is the loud confirm | Bulk exposure risk is the thing to guard; private direction needs less friction. |
 | TUI stack | **Ink** (React for CLIs) + TypeScript | Closest to the `yarn upgrade-interactive` feel: aligned columns, colors, per-row live status. |
 | GitHub client | Octokit (`@octokit/rest`) | Standard, paginated, typed. |
+| Node floor | **`node >= 20`** (was `>= 18`) | Resolved during planning research — see below. Node 18 is EOL (Apr 2025); current deps require ≥20. |
+
+## Dependency stack (resolved during planning)
+
+Planning research found the spec's original `node >= 18` floor incompatible with
+current libraries, and that the latest Ink (7) needs Node ≥22 + React 19 while
+its only test library (`ink-testing-library@4`) is verified against **Ink 5 +
+React 18**. To keep the TDD harness on a verified combination while dropping the
+EOL Node 18 floor, the project targets **Node ≥20** with this stack:
+
+| Package | Version | Notes |
+|---|---|---|
+| `ink` | `^5.2.1` | Last line supporting React 18; verified with the test library. |
+| `react` / `@types/react` | `^18.3.1` / `^18.3` | Pairs with Ink 5. |
+| `ink-spinner` | `^5.0.0` | Per-row apply status. |
+| `ink-testing-library` | `^4.0.0` | Verified passing against Ink 5 + React 18. |
+| `@octokit/rest` | `^22.0.1` | ESM; needs Node ≥20. |
+| `commander` | `^14.0.3` | Flag parsing; zero runtime deps; Node ≥20. |
+| `p-limit` | `^7.3.0` | Concurrency cap (5) for the apply step. |
+| `tsup` | `^8.5.1` | Bundles ESM; preserves shebang + sets executable bit. |
+| `typescript` | `^5.7` | TS 6 deferred (eslint/plugin lag). |
+| `vitest` | `^4.1.9` | Test runner. |
 
 ## User flow
 
@@ -180,7 +202,7 @@ interface ApplyResult {
 
 - TypeScript, bundled with **tsup** to ESM `dist/`.
 - `bin` field mapping `vizzy` → `dist/bin.js` with a `#!/usr/bin/env node`
-  shebang; `engines.node >= 18`.
+  shebang; `engines.node >= 20`.
 - Runnable via `npx vizzy-cli` with no global install.
 - MIT license; README with an asciinema/GIF demo.
 - CI: GitHub Actions running lint + test + build on push/PR.
