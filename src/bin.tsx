@@ -7,8 +7,37 @@ import { getToken } from './auth.js';
 import { makeOctokit, listOwnerRepos, makeSetter, listRepoTree } from './github.js';
 import { loadProtected } from './core/protected.js';
 import { App } from './ui/App.js';
+import { runAudit } from './audit.js';
 
 const flags = parseArgs();
+
+// --audit: non-interactive mode — run before TTY check and Ink render.
+if (flags.audit) {
+  let token: string;
+  try {
+    token = await getToken();
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  }
+
+  const octokit = makeOctokit(token);
+  const treeFetch = (repo: { owner: string; name: string; defaultBranch: string }) =>
+    listRepoTree(octokit, repo.owner, repo.name, repo.defaultBranch);
+
+  const code = await runAudit(
+    () => listOwnerRepos(octokit),
+    treeFetch,
+    {
+      assessOpts: {
+        staleMonths: 12,
+        highProfileStars: 10,
+        now: new Date(),
+      },
+    },
+  );
+  process.exit(code);
+}
 
 if (!process.stdin.isTTY || !process.stdout.isTTY) {
   process.stderr.write('vizzy is interactive and must be run in a terminal (TTY).\n');
