@@ -208,6 +208,17 @@ describe('severity precedence', () => {
     expect(r.severity).toBe('clean');
     expect(r.requiredConfirm).toBe('y');
   });
+
+  it('fail-safe: an otherwise-clean repo with a FAILED scan (null paths) is caution, never clean', () => {
+    // The exact property that stops a failed scan from silently green-lighting:
+    // a repo that would otherwise be clean must be bumped to caution when paths===null,
+    // with scan-incomplete as its SOLE finding (no stale/license/etc. masking it).
+    const recent = new Date('2026-05-01T00:00:00Z').toISOString();
+    const r = assess(makeRepo({ pushedAt: recent, license: 'MIT', stars: 0, isArchived: false }), null, OPTS);
+    expect(r.severity).toBe('caution');
+    expect(r.requiredConfirm).toBe('phrase');
+    expect(r.findings.map((f) => f.kind)).toEqual(['scan-incomplete']);
+  });
 });
 
 // ---------------------------------------------------------------------------
