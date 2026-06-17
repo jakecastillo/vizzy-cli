@@ -36,7 +36,7 @@ These are deferrable; none are required for the first release.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Authentication | `gh auth token`, fall back to `GITHUB_TOKEN` / `GH_TOKEN` | Zero setup for `gh` users; no OAuth app to host or token store to manage. |
+| Authentication | `gh auth token`, fall back to `GH_TOKEN` / `GITHUB_TOKEN` | Zero setup for `gh` users; no OAuth app to host or token store to manage. Env order mirrors `gh`'s own precedence. |
 | Action model | Pick a **target state** for the batch | Avoids ambiguity of toggling a mixed selection. |
 | Flow order | **Target first**, then a pre-filtered list | List shows only repos *not already* in the target state — directly eligible to change. |
 | Repo scope | Owner repos; **include forks**; **exclude archived** | Matches user intent; GitHub blocks visibility changes on archived repos anyway. |
@@ -123,13 +123,16 @@ src/
 
 - **`auth.ts`** — `getToken(): Promise<string>`. Resolution order:
   1. `gh auth token` (spawned subprocess; trim output).
-  2. `GITHUB_TOKEN` then `GH_TOKEN` environment variables.
+  2. `GH_TOKEN` then `GITHUB_TOKEN` environment variables (mirrors `gh`'s own
+     precedence; the env fallback mainly matters when `gh` is absent).
   3. Throw a friendly error instructing the user to run `gh auth login`
      or set `GITHUB_TOKEN`.
 - **`github.ts`** — thin Octokit wrapper.
   - `listOwnerRepos(opts)` → `GET /user/repos?affiliation=owner&per_page=100`,
-    fully paginated; filter to `owner.login === authenticatedUser`; drop
-    archived; keep forks. Returns a normalized `Repo` shape.
+    fully paginated. `affiliation: 'owner'` already restricts results to repos
+    owned by the authenticated user, so an explicit `owner.login` comparison is
+    redundant and omitted. Drops archived; keeps forks. Returns a normalized
+    `Repo` shape.
   - `setVisibility(owner, repo, visibility)` →
     `PATCH /repos/{owner}/{repo}` with `{ visibility }`.
 - **`core/filter.ts`** — `eligibleRepos(repos, target)` returns repos whose
@@ -174,8 +177,10 @@ interface ApplyResult {
 
 - `--dry-run` — run everything except the final PATCH; print intended changes.
 - `--public` / `--private` — preselect the target and skip Step 1.
-- `--include-archived` — opt archived repos back in (shown disabled if GitHub
-  rejects the change).
+- `--include-archived` — opt archived repos back in. They appear as normal
+  selectable rows; GitHub blocks visibility changes on archived repos, so any
+  selected archived repo is reported as a per-repo failure during apply.
+  (Rendering archived rows as visually disabled/non-selectable is deferred.)
 - `--no-forks` — exclude forks (forks are included by default).
 - `--help`, `--version`.
 
@@ -183,8 +188,8 @@ interface ApplyResult {
 
 - **No token** → message: run `gh auth login` or set `GITHUB_TOKEN`.
 - **403 / missing scope** → explain the `repo` scope is required to change
-  visibility.
-- **Rate limited** → show remaining quota and reset time.
+  visibility. A genuine 404 gets a distinct "not found / not accessible" message.
+- **Rate limited** → show the reset time (when to retry).
 - **Per-repo failure during apply** → mark that row failed, continue with the
   rest, and exit with a non-zero code if any failed.
 - **No eligible repos** → friendly "nothing to do" and exit 0.
