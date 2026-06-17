@@ -10,6 +10,8 @@ const repo = (over: Partial<Repo>): Repo => ({
   isArchived: false,
   stars: 0,
   pushedAt: '2020-01-01T00:00:00Z',
+  defaultBranch: 'main',
+  license: null,
   ...over,
 });
 

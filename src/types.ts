@@ -9,6 +9,8 @@ export interface Repo {
   isArchived: boolean;
   stars: number;
   pushedAt: string; // ISO 8601
+  defaultBranch: string;
+  license: string | null; // SPDX identifier or null
 }
 
 export interface ApplyResult {

@@ -19,6 +19,8 @@ const repo = (name: string, v: Repo['visibility']): Repo => ({
   isArchived: false,
   stars: 0,
   pushedAt: '2024-01-01T00:00:00Z',
+  defaultBranch: 'main',
+  license: null,
 });
 
 const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, ...over });

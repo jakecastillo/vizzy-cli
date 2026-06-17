@@ -12,6 +12,8 @@ const repo = (name: string): Repo => ({
   isArchived: false,
   stars: 1,
   pushedAt: '2024-01-01T00:00:00Z',
+  defaultBranch: 'main',
+  license: null,
 });
 
 const repos = [repo('alpha'), repo('beta'), repo('gamma')];
