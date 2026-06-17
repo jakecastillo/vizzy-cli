@@ -1,0 +1,41 @@
+{
+  "name": "vizzy-cli",
+  "version": "0.1.0",
+  "description": "Bulk-toggle the visibility of your personal GitHub repos via an interactive TUI",
+  "type": "module",
+  "bin": { "vizzy": "dist/bin.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/bin.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["github", "cli", "tui", "repository", "visibility", "ink"],
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/request-error": "^7.0.0",
+    "@octokit/rest": "^22.0.1",
+    "commander": "^14.0.3",
+    "ink": "^5.2.1",
+    "ink-spinner": "^5.0.0",
+    "p-limit": "^7.3.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "eslint": "^9.0.0",
+    "ink-testing-library": "^4.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.9"
+  }
+}
