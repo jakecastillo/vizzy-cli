@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Repo, Visibility } from '../types.js';
 
@@ -16,6 +16,12 @@ export function RepoList({
   const [cursor, setCursor] = useState(0);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [offset, setOffset] = useState(0);
+
+  // Read the latest selection from a ref in the input handler: Ink re-subscribes
+  // useInput on each render, but a keypress arriving before the new closure is
+  // installed would otherwise read a stale `checked`.
+  const checkedRef = useRef(checked);
+  checkedRef.current = checked;
 
   const reframe = (next: number) => {
     if (next < offset) setOffset(next);
@@ -43,7 +49,7 @@ export function RepoList({
         prev.size === repos.length ? new Set() : new Set(repos.map((_, i) => i)),
       );
     } else if (key.return) {
-      onSubmit(repos.filter((_, i) => checked.has(i)));
+      onSubmit(repos.filter((_, i) => checkedRef.current.has(i)));
     }
   });
 
