@@ -66,6 +66,7 @@ export function App({
   const [selected, setSelected] = useState<Repo[]>([]);
   const [rows, setRows] = useState<ProgressRow[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
+  const [scanError, setScanError] = useState('');
   const [summary, setSummary] = useState('');
   const [assessments, setAssessments] = useState<RepoAssessment[]>([]);
   const [protectedCount, setProtectedCount] = useState(0);
@@ -110,42 +111,46 @@ export function App({
     let cancelled = false;
 
     const run = async () => {
+      // Protected filtering (pure) — applied for public unless --no-protect.
+      // Computed and committed to `selected` BEFORE the scan so that even an
+      // unexpected scan crash can never let a protected repo reach the apply
+      // stage (the apply effect reads `selected`).
+      let allowed: Repo[];
+      let pCount = 0;
+      if (flags.protect !== false) {
+        const { allowed: a, protectedOut } = partitionProtected(scanRepos, protectPatterns);
+        allowed = a;
+        pCount = protectedOut.length;
+      } else {
+        allowed = scanRepos;
+      }
+      if (!cancelled) {
+        setProtectedCount(pCount);
+        setSelected(allowed);
+      }
+
+      // Run assessRepos with the injected fetcher (or a safe no-op fallback).
+      // Per-repo fetch failures are already isolated inside assessRepos
+      // (→ scan-incomplete); this outer catch is defence-in-depth.
+      const fetcher: TreeFetcher =
+        treeFetch ?? ((_repo) => Promise.resolve({ paths: [], truncated: false }));
+
       try {
-        // Partition protected repos unless --no-protect.
-        let allowed: Repo[];
-        let pCount = 0;
-        if (flags.protect !== false) {
-          const { allowed: a, protectedOut } = partitionProtected(scanRepos, protectPatterns);
-          allowed = a;
-          pCount = protectedOut.length;
-        } else {
-          allowed = scanRepos;
-          pCount = 0;
-        }
-
-        if (!cancelled) setProtectedCount(pCount);
-
-        // Run assessRepos with the injected fetcher (or a safe no-op fallback).
-        const fetcher: TreeFetcher =
-          treeFetch ?? ((_repo) => Promise.resolve({ paths: [], truncated: false }));
-
         const results = await assessRepos(allowed, fetcher, {
           ...DEFAULT_ASSESS_OPTS,
           now: new Date(),
         });
-
         if (!cancelled) {
           setAssessments(results);
-          // Replace selected with the allowed subset (protected ones excluded).
-          setSelected(allowed);
           setStage('confirm');
         }
-      } catch {
-        // Unexpected scanning crash: degrade to scan-incomplete for all repos,
-        // fail toward MORE friction (let user proceed to confirm).
+      } catch (err) {
+        // Unexpected scanning crash: surface the message and fail toward MORE
+        // friction — mark every ALLOWED repo scan-incomplete (caution) and let
+        // the user proceed to confirm. Protected repos are already excluded.
         if (!cancelled) {
-          // Build scan-incomplete assessments for all scanRepos.
-          const fallback = scanRepos.map((r): RepoAssessment => ({
+          setScanError(err instanceof Error ? err.message : String(err));
+          const fallback = allowed.map((r): RepoAssessment => ({
             repo: r,
             findings: [
               {
@@ -250,11 +255,17 @@ export function App({
 
   if (stage === 'confirm' && target)
     return (
-      <Confirm
-        plan={buildPlan(target, selected)}
-        dryRun={flags.dryRun}
-        assessments={assessments}
-        onConfirm={(yes) => {
+      <Box flexDirection="column">
+        {scanError && (
+          <Text color="red">
+            ⚠ Scan incomplete: {scanError} — all repos marked needs-review.
+          </Text>
+        )}
+        <Confirm
+          plan={buildPlan(target, selected)}
+          dryRun={flags.dryRun}
+          assessments={assessments}
+          onConfirm={(yes) => {
           if (!yes) {
             setSummary('Cancelled.');
             setStage('done');
@@ -269,7 +280,8 @@ export function App({
             setStage('applying');
           }
         }}
-      />
+        />
+      </Box>
     );
 
   if (stage === 'applying' && target)

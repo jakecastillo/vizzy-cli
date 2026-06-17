@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import * as githubModule from './github.js';
 import { runAudit } from './audit.js';
 import type { AuditOpts } from './audit.js';
 import type { TreeFetcher } from './core/scan.js';
@@ -236,15 +237,29 @@ describe('runAudit — report content', () => {
 });
 
 describe('runAudit — no GitHub writes', () => {
-  it('never calls setVisibility (treeFetch is read-only)', async () => {
-    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+  it('never reaches the github write surface (setVisibility/makeSetter)', async () => {
+    // Spy on the REAL github exports so that a regression which imported and
+    // called them from runAudit's call graph would actually trip these
+    // assertions. (The prior test asserted on a local vi.fn() never wired into
+    // runAudit, so it passed unconditionally — vacuous.)
+    const setVisibilitySpy = vi.spyOn(githubModule, 'setVisibility').mockResolvedValue(undefined);
+    const makeSetterSpy = vi.spyOn(githubModule, 'makeSetter');
+
+    // A repo with DANGER findings — the exact case where a buggy audit might be
+    // tempted to "remediate" by flipping visibility. It must stay strictly read-only.
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public', license: null })];
     const loadRepos = async () => repos;
-    const setVisibility = vi.fn();
-    const treeFetch: TreeFetcher = async () => ({ paths: [], truncated: false });
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env', 'id_rsa'], truncated: false });
 
     const opts: AuditOpts = { assessOpts: ASSESS_OPTS };
-    await runAudit(loadRepos, treeFetch, opts);
+    await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
 
-    expect(setVisibility).not.toHaveBeenCalled();
+    expect(setVisibilitySpy).not.toHaveBeenCalled();
+    expect(makeSetterSpy).not.toHaveBeenCalled();
+
+    setVisibilitySpy.mockRestore();
+    makeSetterSpy.mockRestore();
   });
 });

@@ -214,6 +214,43 @@ describe('App', () => {
     unmount();
   });
 
+  it('public flow: a rejecting treeFetch degrades gracefully and still reaches confirm', async () => {
+    // A failing scan must NOT abort the TUI. assessRepos isolates the per-repo
+    // rejection (→ scan-incomplete); the app advances to confirm and stays operable.
+    const treeFetch: TreeFetcher = vi.fn().mockRejectedValue(new Error('network down'));
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockResolvedValue([repo('priv-a', 'private')]);
+
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        flags={flags({ public: true })}
+        loadRepos={loadRepos}
+        setter={setter}
+        onComplete={onComplete}
+        treeFetch={treeFetch}
+        protectPatterns={[]}
+      />,
+    );
+
+    await waitFor(() => (lastFrame() ?? '').includes('priv-a'));
+    await delay(100);
+    stdin.write(KEY.space); // select priv-a
+    await waitFor(() => (lastFrame() ?? '').includes('1 selected'));
+    stdin.write(KEY.enter); // submit → scanning
+
+    // (1) does not crash and (2) advances to confirm despite the scan failure.
+    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    expect(treeFetch).toHaveBeenCalled();
+
+    // (3) the flow remains operable end-to-end and onComplete eventually fires.
+    await delay(100);
+    stdin.write('y');
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    expect(setter).toHaveBeenCalledWith('me', 'priv-a', 'public');
+    unmount();
+  });
+
   it('public flow: flags.protect===false skips protected filtering', async () => {
     const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
     const loadRepos = vi.fn().mockResolvedValue([
