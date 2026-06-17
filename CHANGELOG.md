@@ -21,13 +21,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     high-profile (many stars), or archived.
   - **Escalating typed confirmation**: clean → `y`; caution → type `public`;
     danger (a likely secret) → type the repo's **name** to arm it, else it's
-    skipped and left private. A failed/truncated scan degrades to _needs-review_,
-    never a silent all-clear.
+    skipped and left private. A failed/truncated scan degrades to _caution_
+    (scan-incomplete), never a silent all-clear.
 - **`.vizzyignore`** — a glob list of repos that may never be made public
   (hidden from the public selection); `--no-protect` ignores it for a run.
 - **`--audit`** — non-interactive "what have I already exposed?" report over your
   currently-public repos; exits non-zero on any danger finding (CI-friendly).
-- **`--force-public`** — skip per-repo name-typing for danger repos.
+- **`--force-public`** — pre-arm danger repos so you skip per-repo name-typing
+  (you still type `public` to confirm the batch).
 
 ## [0.1.0] - 2026-06-17
 

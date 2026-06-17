@@ -76,6 +76,11 @@ describe('classifyPath — private keys', () => {
 describe('classifyPath — credentials', () => {
   it('flags credentials (bare)', () => expectHit('credentials', 'cred'));
   it('flags credentials.json', () => expectHit('credentials.json', 'cred'));
+  // credentials* wildcard (matches the documented behavior) — backups/variants flag.
+  it('flags credentials_backup.json', () => expectHit('credentials_backup.json', 'cred'));
+  it('flags credentials-prod', () => expectHit('credentials-prod', 'cred'));
+  it('spares credentials.example.json', () => expectClean('credentials.example.json'));
+  it('spares credentials.sample.yml', () => expectClean('credentials.sample.yml'));
   it('flags .npmrc', () => expectHit('.npmrc', 'cred'));
   it('flags nested .npmrc', () => expectHit('home/.npmrc', 'cred'));
   it('flags .pypirc', () => expectHit('.pypirc', 'cred'));

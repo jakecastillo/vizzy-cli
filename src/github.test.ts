@@ -145,7 +145,10 @@ describe('listRepoTree', () => {
     expect(result.truncated).toBe(true);
   });
 
-  it('returns empty result on 404 (empty repo)', async () => {
+  it('propagates a 404 (ref not found) so it becomes scan-incomplete, NOT a clean all-clear', async () => {
+    // A 404 means the tree_sha/ref did not resolve (stale or wrong default branch,
+    // or no access) — we never actually scanned the repo. It must propagate so the
+    // scan layer marks the repo scan-incomplete (caution), never silently clean.
     const octokit = {
       rest: {
         git: {
@@ -153,8 +156,7 @@ describe('listRepoTree', () => {
         },
       },
     };
-    const result = await listRepoTree(octokit as never, 'me', 'r', 'main');
-    expect(result).toEqual({ paths: [], truncated: false });
+    await expect(listRepoTree(octokit as never, 'me', 'r', 'main')).rejects.toBeTruthy();
   });
 
   it('returns empty result on 409 (empty repo — git database not initialized)', async () => {

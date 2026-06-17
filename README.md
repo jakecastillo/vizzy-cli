@@ -75,10 +75,10 @@ to what it finds:
   - **clean** repo → a single `y`.
   - **caution** (risk signals) → type `public` to confirm.
   - **danger** (a likely secret) → type the repo's **name** to arm it; unarmed
-    danger repos are skipped and left private. `--force-public` drops the
-    name-typing (they're still shown).
+    danger repos are skipped and left private. `--force-public` pre-arms danger
+    repos so you don't type each name — you still type `public` to confirm the batch.
 - A failed or truncated scan never silently green-lights a repo — it's marked
-  _needs-review_ (caution), so a network blip can't lower your guard.
+  _caution_ (scan-incomplete), so a network blip can't lower your guard.
 
 ### `.vizzyignore`
 

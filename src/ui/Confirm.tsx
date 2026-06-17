@@ -41,18 +41,13 @@ function PrivateConfirm({
   onConfirm: (repos: Repo[]) => void;
 }): JSX.Element {
   useInput((input) => {
-    // Private target: y/N single keypress — always calls onConfirm([]) to
-    // signal both confirm and cancel (App decides via the repos list being
-    // the private plan repos or empty; here we return [] for both — App
-    // interprets private differently via the plan).
-    // Actually spec says empty = cancel, so:
-    // 'y' = proceed (but private target proceed = App does apply using plan.repos)
-    // We return plan.repos on 'y', [] otherwise — but the original private
-    // confirm just called onConfirm(boolean). We harmonize: returning plan.repos
-    // on 'y' and [] on anything else.
+    // Private target: y/N single keypress. Only 'y' (proceed → plan.repos) and
+    // 'n' (cancel → []) act. Everything else — including navigation keys, which
+    // Ink delivers as input='' — is ignored, so a stray arrow/escape can't
+    // accidentally cancel the whole session.
     if (input.toLowerCase() === 'y') {
       onConfirm(plan.repos);
-    } else {
+    } else if (input.toLowerCase() === 'n') {
       onConfirm([]);
     }
   });

@@ -85,6 +85,21 @@ describe('Confirm — private target (unchanged)', () => {
     expect(onConfirm).toHaveBeenCalledWith([]);
     unmount();
   });
+
+  it('ignores navigation keys — an arrow key does NOT cancel the session', async () => {
+    const onConfirm = vi.fn();
+    const plan = buildPlan('private', [repo('a', 'public')]);
+    const { stdin, unmount } = render(<Confirm plan={plan} onConfirm={onConfirm} />);
+    await delay();
+    // Ink delivers arrow keys as input='' — these must be ignored, not treated
+    // as a cancel. Only an explicit y/n acts.
+    stdin.write(KEY.up);
+    stdin.write(KEY.down);
+    stdin.write(KEY.left);
+    await delay();
+    expect(onConfirm).not.toHaveBeenCalled();
+    unmount();
+  });
 });
 
 describe('Confirm — public target, clean batch (y/N)', () => {

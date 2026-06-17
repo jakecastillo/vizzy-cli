@@ -52,7 +52,12 @@ export async function listRepoTree(
     return { paths, truncated: data.truncated ?? false };
   } catch (err) {
     const httpErr = asHttpError(err);
-    if (httpErr && (httpErr.status === 404 || httpErr.status === 409)) {
+    // 409 = the repo is genuinely EMPTY (no commits) → nothing to expose, a real
+    // all-clear. A 404 means the ref/tree was NOT found (a stale or wrong default
+    // branch, or no access) — we did NOT actually scan the repo, so it must
+    // propagate and become a scan-incomplete (caution) upstream, never a silent
+    // all-clear. Same for every other status.
+    if (httpErr && httpErr.status === 409) {
       return { paths: [], truncated: false };
     }
     throw err;

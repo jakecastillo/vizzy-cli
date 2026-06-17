@@ -83,8 +83,19 @@ const RULES: Rule[] = [
   {
     name: 'credentials',
     match: (b) => {
-      // credentials (bare) or credentials.json
-      if (b === 'credentials' || b === 'credentials.json') return true;
+      // credentials* — bare, credentials.json, credentials_backup.json, etc.
+      // EXCEPT conventional samples (credentials.example*/.sample*/.template*).
+      if (b.startsWith('credentials')) {
+        const after = b.slice('credentials'.length);
+        if (
+          after.startsWith('.example') ||
+          after.startsWith('.sample') ||
+          after.startsWith('.template')
+        ) {
+          return false;
+        }
+        return true;
+      }
 
       // .npmrc / .pypirc
       if (b === '.npmrc' || b === '.pypirc') return true;
