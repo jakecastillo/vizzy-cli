@@ -1,13 +1,17 @@
 import { Box, Text, useInput } from 'ink';
 import { formatSummary, type ChangePlan } from '../core/plan.js';
+import type { RepoAssessment } from '../core/checks.js';
 
 export function Confirm({
   plan,
   dryRun,
+  assessments: _assessments,
   onConfirm,
 }: {
   plan: ChangePlan;
   dryRun?: boolean;
+  /** Assessments from the scanning stage (bead .8 will consume these). */
+  assessments?: RepoAssessment[];
   onConfirm: (yes: boolean) => void;
 }): JSX.Element {
   useInput((input) => {
