@@ -114,6 +114,7 @@ dist
     "react": "^18.3.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "eslint": "^9.0.0",
@@ -180,9 +181,12 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
   },
-  esbuild: { jsx: 'automatic' },
 });
 ```
+
+> JSX/TSX transform is driven by `tsconfig`'s `jsx: "react-jsx"`. Do NOT add an
+> `esbuild: { jsx: ... }` block — vitest 4 transforms via **oxc**, ignores the
+> esbuild option, and prints a warning on every run.
 
 - [ ] **Step 6: Write `eslint.config.js`** (flat config, minimal)
 
@@ -202,7 +206,7 @@ export default tseslint.config(
 );
 ```
 
-> `@eslint/js` ships with `eslint`; `typescript-eslint` is the dev dep above. If `eslint .` errors on config resolution, that is a lint-only concern — it does NOT block tests or build.
+> `@eslint/js` and `typescript-eslint` are both declared dev deps above. If `eslint .` errors on config resolution, that is a lint-only concern — it does NOT block tests or build.
 
 - [ ] **Step 7: Write placeholder `src/bin.tsx`** (replaced in Task 13; exists now so `tsup` has an entry and we validate the shebang/executable path early)
 
@@ -730,6 +734,9 @@ describe('explainError', () => {
   it('explains a missing-scope 403', () => {
     expect(explainError(reqError(403))).toContain('scope');
   });
+  it('explains a 404 distinctly from a 403', () => {
+    expect(explainError(reqError(404)).toLowerCase()).toContain('not found');
+  });
   it('explains a rate limit (remaining 0)', () => {
     expect(explainError(reqError(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000000' })))
       .toContain('Rate limited');
@@ -760,7 +767,6 @@ Expected: FAIL — cannot find `./github.js`.
 
 ```typescript
 import { Octokit } from '@octokit/rest';
-import { RequestError } from '@octokit/request-error';
 import type { Repo, Visibility, VisibilitySetter } from './types.js';
 
 export function makeOctokit(token: string): Octokit {
@@ -813,24 +819,48 @@ export async function setVisibility(
   await octokit.rest.repos.update({ owner, repo, visibility });
 }
 
+interface HttpError {
+  status: number;
+  message: string;
+  response?: { headers: Record<string, string | undefined> };
+}
+
+/** Duck-type an Octokit RequestError without relying on `instanceof`. */
+function asHttpError(err: unknown): HttpError | null {
+  if (
+    typeof err === 'object' &&
+    err !== null &&
+    typeof (err as { status?: unknown }).status === 'number'
+  ) {
+    return err as HttpError;
+  }
+  return null;
+}
+
 export function explainError(err: unknown): string {
-  if (err instanceof RequestError) {
-    const remaining = err.response?.headers['x-ratelimit-remaining'];
-    const reset = err.response?.headers['x-ratelimit-reset'];
-    if ((err.status === 403 || err.status === 429) && remaining === '0') {
+  // Duck-type rather than `instanceof RequestError`: a bundled/duplicate copy of
+  // @octokit/request-error would defeat instanceof and drop the helpful message.
+  const httpErr = asHttpError(err);
+  if (httpErr) {
+    const remaining = httpErr.response?.headers['x-ratelimit-remaining'];
+    const reset = httpErr.response?.headers['x-ratelimit-reset'];
+    if ((httpErr.status === 403 || httpErr.status === 429) && remaining === '0') {
       const resetMs = Number(reset) * 1000; // header is epoch SECONDS
       const when = Number.isFinite(resetMs)
         ? new Date(resetMs).toLocaleTimeString()
         : 'soon';
       return `Rate limited. Try again after ${when}.`;
     }
-    if (err.status === 403 || err.status === 404) {
-      return 'Permission denied. Your token likely lacks the `repo` scope (classic PAT) or Administration:write (fine-grained PAT).';
+    if (httpErr.status === 403) {
+      return 'Permission denied (403). Your token likely lacks the `repo` scope (classic PAT) or Administration:write (fine-grained PAT).';
     }
-    if (err.status === 422) {
-      return `GitHub rejected the request (422): ${err.message}`;
+    if (httpErr.status === 404) {
+      return 'Repository not found or not accessible with this token (404).';
     }
-    return `GitHub error ${err.status}: ${err.message}`;
+    if (httpErr.status === 422) {
+      return `GitHub rejected the request (422): ${httpErr.message}`;
+    }
+    return `GitHub error ${httpErr.status}: ${httpErr.message}`;
   }
   return err instanceof Error ? err.message : String(err);
 }
@@ -1641,18 +1671,24 @@ git commit -m "feat: add ApplyProgress per-row status component"
 
 **Interfaces:**
 - Consumes: `CliFlags` from `../cli.js`; `Repo`, `Visibility`, `VisibilitySetter`, `RowStatus` from `../types.js`; `eligibleRepos` from `../core/filter.js`; `buildPlan` from `../core/plan.js`; `applyChanges` from `../apply.js`; the four UI components; `useApp` from `ink`.
-- Produces: `interface AppProps { flags: CliFlags; loadRepos: () => Promise<Repo[]>; setter: VisibilitySetter }`; `function App(props: AppProps): JSX.Element`.
-- Behavior: if `flags.public`/`flags.private` set, skip the target step. Stages: `target → loading → (empty | error | select) → confirm → (dry-run done | applying → done)`. On `done`, set `process.exitCode = 1` if any failure, then `useApp().exit()`.
+- Produces: `interface AppProps { flags: CliFlags; loadRepos: () => Promise<Repo[]>; setter: VisibilitySetter; onComplete?: (failedCount: number) => void }`; `function App(props: AppProps): JSX.Element`.
+- Behavior: if `flags.public`/`flags.private` set, skip the target step. Stages: `target → loading → (empty | error | select) → confirm → (dry-run done | applying → done)`. On every terminal state App calls `onComplete(failedCount)` (0 for success/cancel/dry-run/empty/no-selection; N for apply failures; 1 for a load error) then `useApp().exit()`. **App never touches `process.exitCode`** — only `bin.tsx` translates `onComplete` into the process exit code, so tests can assert via the callback without corrupting the vitest runner.
 
 - [ ] **Step 1: Write the failing test `src/ui/App.test.tsx`**
 
 ```tsx
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import { App } from './App.js';
 import { delay, KEY } from '../test-utils.js';
 import type { Repo } from '../types.js';
 import type { CliFlags } from '../cli.js';
+
+// Defensive: App never mutates process.exitCode (it uses the onComplete prop),
+// but reset anyway so no test can leak a non-zero code into the vitest runner.
+afterEach(() => {
+  process.exitCode = 0;
+});
 
 const repo = (name: string, v: Repo['visibility']): Repo => ({
   name,
@@ -1669,9 +1705,10 @@ const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, ...ove
 describe('App', () => {
   it('runs the full private flow and applies the selection', async () => {
     const setter = vi.fn().mockResolvedValue(undefined);
+    const onComplete = vi.fn();
     const loadRepos = vi.fn().mockResolvedValue([repo('pub-a', 'public'), repo('already', 'private')]);
     const { stdin, lastFrame, unmount } = render(
-      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={setter} />,
+      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={setter} onComplete={onComplete} />,
     );
     await delay(40); // skip target (flag set) + finish loading
     expect(lastFrame()).toContain('pub-a');
@@ -1682,19 +1719,53 @@ describe('App', () => {
     await delay();
     expect(lastFrame()).toContain('Proceed?');
     stdin.write('y');
-    await delay(40);
+    await delay(60); // apply path crosses an extra effect+promise boundary
     expect(setter).toHaveBeenCalledWith('me', 'pub-a', 'private');
     expect(lastFrame()!.toLowerCase()).toContain('done');
+    expect(onComplete).toHaveBeenCalledWith(0);
+    unmount();
+  });
+
+  it('reports apply failures via onComplete(1) without crashing the run', async () => {
+    const onComplete = vi.fn();
+    const setter = vi.fn().mockRejectedValue(new Error('denied'));
+    const loadRepos = vi.fn().mockResolvedValue([repo('pub-a', 'public')]);
+    const { stdin, lastFrame, unmount } = render(
+      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={setter} onComplete={onComplete} />,
+    );
+    await delay(40);
+    stdin.write('a'); // select all
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    stdin.write('y');
+    await delay(60);
+    expect(onComplete).toHaveBeenCalledWith(1);
+    expect(lastFrame()).toContain('1 failed');
+    unmount();
+  });
+
+  it('renders a load error and reports it via onComplete(1)', async () => {
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockRejectedValue(new Error('boom: bad token'));
+    const { lastFrame, unmount } = render(
+      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={vi.fn()} onComplete={onComplete} />,
+    );
+    await delay(40);
+    expect(lastFrame()).toContain('boom: bad token');
+    expect(onComplete).toHaveBeenCalledWith(1);
     unmount();
   });
 
   it('shows a friendly message when nothing is eligible', async () => {
+    const onComplete = vi.fn();
     const loadRepos = vi.fn().mockResolvedValue([repo('already', 'private')]);
     const { lastFrame, unmount } = render(
-      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={vi.fn()} />,
+      <App flags={flags({ private: true })} loadRepos={loadRepos} setter={vi.fn()} onComplete={onComplete} />,
     );
     await delay(40);
     expect(lastFrame()!.toLowerCase()).toContain('nothing');
+    expect(onComplete).toHaveBeenCalledWith(0);
     unmount();
   });
 
@@ -1710,7 +1781,7 @@ describe('App', () => {
     stdin.write(KEY.enter);
     await delay();
     stdin.write('y');
-    await delay(40);
+    await delay(60);
     expect(setter).not.toHaveBeenCalled();
     expect(lastFrame()!.toLowerCase()).toContain('dry');
     unmount();
@@ -1742,6 +1813,8 @@ export interface AppProps {
   flags: CliFlags;
   loadRepos: () => Promise<Repo[]>;
   setter: VisibilitySetter;
+  /** Called once on any terminal state with the number of failed repos. */
+  onComplete?: (failedCount: number) => void;
 }
 
 type Stage = 'target' | 'loading' | 'error' | 'empty' | 'select' | 'confirm' | 'applying' | 'done';
@@ -1752,7 +1825,12 @@ function initialTarget(flags: CliFlags): Visibility | null {
   return null;
 }
 
-export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
+export function App({
+  flags,
+  loadRepos,
+  setter,
+  onComplete = () => {},
+}: AppProps): JSX.Element {
   const { exit } = useApp();
   const preset = initialTarget(flags);
 
@@ -1777,6 +1855,7 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
         });
         if (eligible.length === 0) {
           setStage('empty');
+          onComplete(0);
           setTimeout(exit, 0);
         } else {
           setCandidates(eligible);
@@ -1786,14 +1865,14 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
       .catch((err: unknown) => {
         if (cancelled) return;
         setErrorMsg(err instanceof Error ? err.message : String(err));
-        process.exitCode = 1;
         setStage('error');
+        onComplete(1);
         setTimeout(exit, 0);
       });
     return () => {
       cancelled = true;
     };
-  }, [stage, target, flags, loadRepos, exit]);
+  }, [stage, target, flags, loadRepos, exit, onComplete]);
 
   // Apply once confirmed.
   useEffect(() => {
@@ -1807,12 +1886,12 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
       },
     }).then((results) => {
       const failed = results.filter((r) => !r.ok).length;
-      if (failed > 0) process.exitCode = 1;
       setSummary(`Done: ${results.length - failed} changed, ${failed} failed.`);
       setStage('done');
+      onComplete(failed);
       setTimeout(exit, 0);
     });
-  }, [stage, target, selected, setter, exit]);
+  }, [stage, target, selected, setter, exit, onComplete]);
 
   if (stage === 'target')
     return (
@@ -1838,6 +1917,7 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
           if (sel.length === 0) {
             setStage('done');
             setSummary('No repos selected.');
+            onComplete(0);
             setTimeout(exit, 0);
             return;
           }
@@ -1856,10 +1936,12 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
           if (!yes) {
             setSummary('Cancelled.');
             setStage('done');
+            onComplete(0);
             setTimeout(exit, 0);
           } else if (flags.dryRun) {
             setSummary(`[dry-run] Would change ${selected.length} repo(s) to ${target}.`);
             setStage('done');
+            onComplete(0);
             setTimeout(exit, 0);
           } else {
             setStage('applying');
@@ -1883,7 +1965,7 @@ export function App({ flags, loadRepos, setter }: AppProps): JSX.Element {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/ui/App.test.tsx`
-Expected: PASS, 3 tests. If a flow assertion flakes, increase the `await delay(40)` after `y`/loading to `delay(60)` — React effect + apply need a tick (real timers only).
+Expected: PASS, 5 tests (full flow, apply-failure, load-error, empty, dry-run). The apply/done assertions already wait `delay(60)`; if a flow assertion still flakes under load, bump to `delay(80)` — React effect + apply need a tick (real timers only).
 
 - [ ] **Step 5: Run the entire suite**
 
@@ -1935,10 +2017,19 @@ try {
 
 const octokit = makeOctokit(token);
 const { waitUntilExit } = render(
-  <App flags={flags} loadRepos={() => listOwnerRepos(octokit)} setter={makeSetter(octokit)} />,
+  <App
+    flags={flags}
+    loadRepos={() => listOwnerRepos(octokit)}
+    setter={makeSetter(octokit)}
+    onComplete={(failed) => {
+      if (failed > 0) process.exitCode = 1;
+    }}
+  />,
 );
 await waitUntilExit();
 ```
+
+> `onComplete` is the ONLY place the process exit code is set — `App` itself stays pure of `process` mutations so its tests can't corrupt the vitest runner.
 
 - [ ] **Step 2: Typecheck the whole project**
 
@@ -2070,11 +2161,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -2119,6 +2213,8 @@ git commit -m "docs: add README, LICENSE, and CI workflow"
 **Type consistency:** `Visibility`/`Target`/`Repo`/`ApplyResult`/`VisibilitySetter`/`RowStatus` defined once in `types.ts` (Task 2) and consumed unchanged. `eligibleRepos`, `buildPlan`/`formatSummary`/`ChangePlan`, `getToken`, `listOwnerRepos`/`setVisibility`/`makeSetter`/`explainError`/`RawRepo`, `applyChanges`/`ApplyOptions`, `parseArgs`/`CliFlags`, and the four component prop shapes match across producer and consumer tasks. `ProgressRow` defined in Task 11, imported by Task 12.
 
 **Known environment caveats flagged for the executor:**
-- `RequestError` runtime constructor signature may vary; `explainError` only reads `.status` / `.response.headers`, and the github test builds errors structurally.
-- Ink tests require the post-`render()` settle delay (Global Constraints); bump `delay()` if a flow test flakes.
+- `explainError` duck-types the error (reads `.status` / `.response.headers`) rather than using `instanceof RequestError`, so a bundled/duplicate copy of `@octokit/request-error` can't defeat it. The github test still constructs a real `RequestError` to exercise it.
+- `App` never mutates `process.exitCode`; it calls the injected `onComplete(failedCount)` and only `bin.tsx` translates that into the exit code. App tests assert via the callback and reset `process.exitCode` in `afterEach` defensively.
+- Ink tests require the post-`render()` settle delay (Global Constraints); the apply/done assertions wait `delay(60)` — bump to `delay(80)` only if a flow test flakes under load.
+- `vitest.config.ts` must NOT set `esbuild.jsx` — vitest 4 transforms via oxc and honors `tsconfig`'s `jsx: "react-jsx"`; the esbuild option is ignored and warns.
 - eslint flat config is a nice-to-have; it must never block test/build.
