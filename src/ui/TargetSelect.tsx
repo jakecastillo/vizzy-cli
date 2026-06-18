@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Visibility } from '../types.js';
+import { useColor } from './theme.js';
 
 const OPTIONS: Visibility[] = ['private', 'public'];
 
@@ -9,6 +10,7 @@ export function TargetSelect({
 }: {
   onSelect: (target: Visibility) => void;
 }): JSX.Element {
+  const color = useColor();
   const [cursor, setCursor] = useState(0);
 
   useInput((_input, key) => {
@@ -21,7 +23,7 @@ export function TargetSelect({
     <Box flexDirection="column">
       <Text bold>Set selected repos to:</Text>
       {OPTIONS.map((opt, i) => (
-        <Text key={opt} color={i === cursor ? 'cyan' : undefined}>
+        <Text key={opt} color={i === cursor ? color('cyan') : undefined}>
           {i === cursor ? '❯ ' : '  '}
           {opt === 'public' ? 'Public' : 'Private'}
         </Text>

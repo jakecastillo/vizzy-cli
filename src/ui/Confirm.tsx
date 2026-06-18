@@ -4,6 +4,7 @@ import { formatSummary, type ChangePlan } from '../core/plan.js';
 import { consequencesFor } from '../core/consequences.js';
 import type { RepoAssessment, Severity } from '../core/checks.js';
 import type { Repo, Target } from '../types.js';
+import { useColor } from './theme.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,6 +35,7 @@ function batchSeverity(assessments: RepoAssessment[]): Severity {
  * once even when many repos are going public. Star/fork counts are summed.
  */
 function ConsequencesList({ repos, target }: { repos: Repo[]; target: Target }): JSX.Element | null {
+  const color = useColor();
   if (repos.length === 0) return null;
 
   if (target === 'public') {
@@ -41,9 +43,9 @@ function ConsequencesList({ repos, target }: { repos: Repo[]; target: Target }):
     const lines = consequencesFor(repos[0], target);
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color="yellow">Consequences:</Text>
+        <Text color={color('yellow')}>Consequences:</Text>
         {lines.map((line) => (
-          <Text key={line} color="yellow">  • {line}</Text>
+          <Text key={line} color={color('yellow')}>  • {line}</Text>
         ))}
       </Box>
     );
@@ -60,9 +62,9 @@ function ConsequencesList({ repos, target }: { repos: Repo[]; target: Target }):
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color="yellow">Consequences:</Text>
+      <Text color={color('yellow')}>Consequences:</Text>
       {lines.map((line) => (
-        <Text key={line} color="yellow">  • {line}</Text>
+        <Text key={line} color={color('yellow')}>  • {line}</Text>
       ))}
     </Box>
   );
@@ -115,21 +117,22 @@ function PrivateConfirm({
  * Per-repo review row.
  */
 function RepoRow({ assessment, armed }: { assessment: RepoAssessment; armed: boolean }): JSX.Element {
+  const color = useColor();
   const isUnarmedDanger = assessment.severity === 'danger' && !armed;
   return (
     <Box flexDirection="row">
-      <Text color={severityColor(assessment.severity)}>
+      <Text color={color(severityColor(assessment.severity))}>
         {severityGlyph(assessment.severity)}
       </Text>
       <Text> {assessment.repo.name}</Text>
       {assessment.findings.length > 0 && (
-        <Text color="gray"> — {assessment.findings.map((f) => f.label).join(', ')}</Text>
+        <Text color={color('gray')}> — {assessment.findings.map((f) => f.label).join(', ')}</Text>
       )}
       {isUnarmedDanger && (
-        <Text color="gray"> [skipped — likely secret]</Text>
+        <Text color={color('gray')}> [skipped — likely secret]</Text>
       )}
       {assessment.severity === 'danger' && armed && (
-        <Text color="green"> [armed]</Text>
+        <Text color={color('green')}> [armed]</Text>
       )}
     </Box>
   );
@@ -149,6 +152,7 @@ function CleanConfirm({
   assessments: RepoAssessment[];
   onConfirm: (repos: Repo[]) => void;
 }): JSX.Element {
+  const color = useColor();
   useInput((input) => {
     if (input.toLowerCase() === 'y') {
       onConfirm(plan.repos);
@@ -165,7 +169,7 @@ function CleanConfirm({
         ))}
       </Box>
       <Box flexDirection="column">
-        <Text color="red">{formatSummary(plan)}</Text>
+        <Text color={color('red')}>{formatSummary(plan)}</Text>
         <ConsequencesList repos={plan.repos} target={plan.target} />
         <Box marginTop={1}>
           <Text>
@@ -192,6 +196,7 @@ function CautionConfirm({
   assessments: RepoAssessment[];
   onConfirm: (repos: Repo[]) => void;
 }): JSX.Element {
+  const color = useColor();
   const [buffer, setBuffer] = useState('');
 
   useInput((input, key) => {
@@ -219,7 +224,7 @@ function CautionConfirm({
         ))}
       </Box>
       <Box flexDirection="column">
-        <Text color="red">{formatSummary(plan)}</Text>
+        <Text color={color('red')}>{formatSummary(plan)}</Text>
         <ConsequencesList repos={plan.repos} target={plan.target} />
         <Box marginTop={1}>
           <Text>
@@ -229,7 +234,7 @@ function CautionConfirm({
         </Box>
         <Box>
           <Text>{buffer}</Text>
-          <Text color="gray">█</Text>
+          <Text color={color('gray')}>█</Text>
         </Box>
       </Box>
     </Box>
@@ -253,6 +258,7 @@ function DangerConfirm({
   forcePublic?: boolean;
   onConfirm: (repos: Repo[]) => void;
 }): JSX.Element {
+  const color = useColor();
   const dangerAssessments = assessments.filter((a) => a.severity === 'danger');
 
   const [armed, setArmed] = useState<Set<string>>(() => {
@@ -341,7 +347,7 @@ function DangerConfirm({
         ))}
       </Box>
       <Box flexDirection="column">
-        <Text color="red">{formatSummary(plan)}</Text>
+        <Text color={color('red')}>{formatSummary(plan)}</Text>
         <ConsequencesList repos={plan.repos} target={plan.target} />
         <Box marginTop={1}>
           <Text>
@@ -351,7 +357,7 @@ function DangerConfirm({
         </Box>
         <Box>
           <Text>{buffer}</Text>
-          <Text color="gray">█</Text>
+          <Text color={color('gray')}>█</Text>
         </Box>
       </Box>
     </Box>
