@@ -110,6 +110,65 @@ Runs the same checks non-interactively over your **currently-public** repos — 
 danger-level finding, so you can wire it into CI or a pre-publish check. It makes
 no changes.
 
+## Install as a gh extension
+
+[gh extensions](https://cli.github.com/manual/gh_extension) let you run vizzy
+directly through the `gh` CLI:
+
+```bash
+# After the gh-vizzy repo is published (manual step — see note below):
+gh extension install jakecastillo/gh-vizzy
+
+# Then run:
+gh vizzy --audit
+gh vizzy --public
+```
+
+> **Note:** The `gh-extension/gh-vizzy` shim lives in this repo, but gh
+> extensions require a *separate* public repository named `gh-vizzy`.
+> Splitting and publishing that repo is a manual remote step left for a human
+> operator; the shim file itself is committed here for review.
+
+## GitHub Action
+
+Use vizzy as a [composite GitHub Action](action.yml) to run an exposure audit
+in CI and upload SARIF results to GitHub Code Scanning:
+
+```yaml
+# .github/workflows/exposure-audit.yml
+name: Exposure audit
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # every Monday
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jakecastillo/vizzy-cli@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          format: sarif        # default — uploads to Code Scanning
+```
+
+See [`examples/exposure-audit.yml`](examples/exposure-audit.yml) for the full
+sample workflow including the schedule + PR triggers.
+
+**Inputs**
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `github-token` | yes | — | Token used to list repositories |
+| `format` | no | `sarif` | Output format: `sarif`, `json`, or `text` |
+
+The action exits non-zero when any danger-level finding is detected, so it
+slots naturally into branch protection or required status checks.
+
 ## Development
 
 Requires **Node.js ≥ 20**.

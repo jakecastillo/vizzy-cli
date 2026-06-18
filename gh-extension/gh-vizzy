@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+# gh-vizzy — gh extension shim for vizzy-cli
+#
+# Invokes vizzy-cli via npx so the extension works without a global install.
+# gh extensions are POSIX shell scripts; this one delegates entirely to the
+# published vizzy-cli npm package, forwarding all arguments.
+#
+# To install as a local gh extension (after splitting to its own repo):
+#   gh extension install jakecastillo/gh-vizzy
+#
+# NOTE: Publishing the separate gh-vizzy repo to GitHub is a manual remote
+# step left for a human operator; only the in-repo shim is committed here.
+
+exec npx --yes vizzy-cli "$@"

@@ -1,0 +1,36 @@
+name: vizzy exposure audit
+description: >
+  Run vizzy --audit over your public repos and upload a SARIF report to
+  GitHub Code Scanning. Exits non-zero on danger findings.
+
+inputs:
+  github-token:
+    description: GitHub token used by vizzy to list repositories.
+    required: true
+  format:
+    description: Output format — sarif (default), json, or text.
+    required: false
+    default: sarif
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run vizzy exposure audit
+      shell: sh
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        npx vizzy-cli@latest --audit --format ${{ inputs.format }} > results.sarif
+
+    # Upload the SARIF report to GitHub Code Scanning.
+    # Remove or comment out this step if you do not have Code Scanning enabled.
+    - name: Upload SARIF to GitHub Code Scanning
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: results.sarif
