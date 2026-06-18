@@ -81,7 +81,7 @@ npm i -g vizzy-cli && vizzy
 | `--audit` | Report exposure risk over your currently-public repos and exit (conflicts with `--dry-run`) |
 | `--org <name>` | Audit a GitHub org instead of your personal repos (read-only; conflicts with `--public`/`--private`) |
 | `--fail-on-new` | With `--audit`: exit non-zero only on NEW exposure vs the last `.vizzy/state.json` snapshot |
-| `--format <text\|json\|sarif>` | `--audit` output format (default `text`); `sarif` uploads to GitHub Code Scanning |
+| `--format <text\|json\|sarif>` | `--audit` output format (default `text`); `sarif` is GitHub Code Scanning-compatible (upload it via the [Action](#github-action) or `upload-sarif`) |
 | `--json` | Shorthand for `--format json` |
 | `--check [owner/repo]` | Pre-publish readiness for ONE repo (secrets in tree + content + history, LICENSE, docs, large files); infers the repo from the cwd git remote if omitted |
 

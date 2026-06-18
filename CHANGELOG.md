@@ -22,11 +22,12 @@ output, new commands, and an accessible UI.
   prints actionable guidance instead of crashing.
 - **`--json` / `--format text|json|sarif`** — machine-readable `--audit` output;
   SARIF 2.1.0 uploads to GitHub Code Scanning.
-- **Deeper exposure scan** — in addition to filename matching, vizzy now scans
-  **file content** (high-confidence keys: AWS, GitHub, Stripe, Slack, Google,
-  PEM private keys) and **git history** (a secret deleted from HEAD but still
-  recoverable from history → `secret-in-history`). Opt-in / always-on in
-  `vizzy check`.
+- **Deeper exposure scan in `vizzy check`** — beyond filename matching, `vizzy
+  check` scans **file content** (high-confidence keys: AWS, GitHub, Stripe, Slack,
+  Google, PEM private keys) and **git history** (a secret deleted from HEAD but
+  still recoverable → `secret-in-history`). The bulk going-public and `--audit`
+  flows use the fast filename + risk-signal scan; wiring content/history into them
+  (a `--deep` flag) is tracked as a follow-up.
 - **`vizzy --check [owner/repo]`** — a pre-publish readiness command for one repo
   (secrets in tree + content + history, LICENSE, README/CONTRIBUTING/CODE_OF_CONDUCT,
   large files), inferring the repo from the cwd git remote.
