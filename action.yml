@@ -27,10 +27,11 @@ runs:
       run: |
         npx vizzy-cli@latest --audit --format ${{ inputs.format }} > results.sarif
 
-    # Upload the SARIF report to GitHub Code Scanning.
+    # Upload the SARIF report to GitHub Code Scanning — only when the output is
+    # actually SARIF (json/text formats produce a non-SARIF file and are skipped).
     # Remove or comment out this step if you do not have Code Scanning enabled.
     - name: Upload SARIF to GitHub Code Scanning
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && inputs.format == 'sarif'
       with:
         sarif_file: results.sarif

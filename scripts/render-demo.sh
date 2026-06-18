@@ -31,5 +31,8 @@ if ! command -v vhs &>/dev/null; then
 fi
 
 echo "Rendering demo/vizzy.tape -> demo/vizzy.gif"
-vhs "${REPO_ROOT}/demo/vizzy.tape"
-echo "Done. GIF written to demo/vizzy.gif"
+# cd to the repo root so the tape's relative `Output demo/vizzy.gif` lands there
+# regardless of the caller's working directory.
+cd "${REPO_ROOT}"
+vhs demo/vizzy.tape
+echo "Done. GIF written to ${REPO_ROOT}/demo/vizzy.gif"

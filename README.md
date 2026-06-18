@@ -125,7 +125,8 @@ vizzy --audit
 Runs the same checks non-interactively over your **currently-public** repos — a
 "what have I already exposed?" report — and exits non-zero if any repo has a
 danger-level finding, so you can wire it into CI or a pre-publish check. It makes
-no changes.
+no changes on GitHub (it writes only a local `.vizzy/state.json` snapshot for
+drift detection — pass nothing to disable, or add it to `.gitignore`).
 
 ## Install as a gh extension
 
@@ -232,8 +233,9 @@ traffic is to `api.github.com` via the official Octokit REST client.
 
 **Safe-by-default flags.**
 - `--dry-run` previews every change without touching GitHub — nothing is applied.
-- `--audit` and `--check` are fully read-only; they fetch repo metadata and file
-  trees but never mutate anything.
+- `--audit` and `--check` make **no changes on GitHub** — they only fetch repo
+  metadata and file trees. (`--audit` does write a local `.vizzy/state.json`
+  snapshot for drift detection; nothing is sent anywhere.)
 
 ### Least-privilege PAT
 
