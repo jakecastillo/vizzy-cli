@@ -12,6 +12,8 @@ import { App } from './ui/App.js';
 import { runAudit } from './audit.js';
 import { runHeadless } from './headless.js';
 import { runCheck } from './check.js';
+import { runArchive } from './archive.js';
+import { setArchived } from './github.js';
 
 const flags = parseArgs();
 
@@ -164,6 +166,36 @@ if (flags.check !== undefined && flags.check !== false) {
     },
   });
 
+  process.exit(code);
+}
+
+// ── Archive / Unarchive: route --archive / --unarchive to runArchive (headless, no exposure scan).
+// Routed BEFORE the TTY check and the visibility-headless block.
+if (flags.archive || flags.unarchive) {
+  let token: string;
+  try {
+    token = await getToken();
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(3);
+  }
+
+  const octokit = makeOctokit(token);
+
+  const code = await runArchive(
+    {
+      loadRepos: () => listOwnerRepos(octokit),
+      setArchived: (owner, name, archived) => setArchived(octokit, owner, name, archived),
+    },
+    {
+      archive: flags.archive,
+      unarchive: flags.unarchive,
+      repos: flags.repos,
+      allEligible: flags.allEligible,
+      yes: flags.yes,
+      json: flags.format === 'json',
+    },
+  );
   process.exit(code);
 }
 
