@@ -54,20 +54,74 @@ npm i -g vizzy-cli && vizzy
 
 ### Flags
 
+**Target & selection**
+
 | Flag | Effect |
 |---|---|
 | `--private` / `--public` | Preselect the target and skip step 1 |
-| `--dry-run` | Preview changes without applying them (conflicts with `--audit`) |
 | `--include-archived` | Include archived repos (GitHub may reject the change) |
 | `--no-forks` | Exclude forked repos (forks are included by default) |
-| `--force-public` | Skip per-repo name confirmation for danger repos when going public |
-| `--no-protect` | Ignore `.vizzyignore` protected-repos list |
-| `--audit` | Non-interactive audit: report public-repo exposure risk and exit (conflicts with `--dry-run`) |
-| `--format <text\|json\|sarif>` | Output format for `--audit` (default `text`); `sarif` is GitHub-code-scanning compatible |
-| `--json` | Shorthand for `--format json` |
+| `--no-protect` | Ignore the `.vizzyignore` protected-repos list |
+| `--dry-run` | Preview changes without applying them (conflicts with `--audit`) |
+| `--force-public` | Pre-arm danger repos so you skip per-repo name-typing (you still type `public`) |
 
-**Exit codes:** `0` ok/clean · `1` a danger finding or an apply failure · `2` usage error · `3` auth/network error. `--audit` honors this contract, so it slots into CI.
+**Headless / scripting** (run without the TUI; see [Scripting](#scripting--ci))
+
+| Flag | Effect |
+|---|---|
+| `--repos <list>` | Target repos by name: `a,b,c`, `@file` (one name per line), or `-` for stdin |
+| `--all-eligible` | Select every eligible repo |
+| `--yes` | Apply caution-level repos without interactive confirmation |
+| `--allow-danger` | Also apply danger repos (bypass the skip-and-report guard) |
+
+**Audit & exposure** (read-only)
+
+| Flag | Effect |
+|---|---|
+| `--audit` | Report exposure risk over your currently-public repos and exit (conflicts with `--dry-run`) |
+| `--org <name>` | Audit a GitHub org instead of your personal repos (read-only; rejects write flags) |
+| `--fail-on-new` | With `--audit`: exit non-zero only on NEW exposure vs the last `.vizzy/state.json` snapshot |
+| `--format <text\|json\|sarif>` | `--audit` output format (default `text`); `sarif` uploads to GitHub Code Scanning |
+| `--json` | Shorthand for `--format json` |
+| `--check [owner/repo]` | Pre-publish readiness for ONE repo (secrets in tree + content + history, LICENSE, docs, large files); infers the repo from the cwd git remote if omitted |
+
+**Archive**
+
+| Flag | Effect |
+|---|---|
+| `--archive` / `--unarchive` | Bulk archive / unarchive selected repos (no exposure scan; conflicts with `--public`/`--private`) |
+
+**Output**
+
+| Flag | Effect |
+|---|---|
+| `--plain` | Accessible plain mode: no ANSI color, static text instead of spinners (also honored via `NO_COLOR`) |
 | `-h, --help` / `-v, --version` | Standard |
+
+**Exit codes:** `0` ok/clean · `1` a danger finding or an apply failure · `2` usage error · `3` auth/network error. `--audit`, `--check`, and headless apply all honor this contract, so they slot into CI.
+
+## Scripting & CI
+
+vizzy runs headless (no TUI) when you pass a selector — handy for cron jobs,
+pre-publish gates, and onboarding scripts. The exposure scan still runs: clean
+repos apply, but a repo with a **detected secret is skipped and reported** unless
+you explicitly pass `--allow-danger` (or `--force-public`).
+
+```bash
+# Make a named set public, non-interactively (danger repos are skipped + reported):
+vizzy --public --repos api,docs,site --yes
+
+# Everything eligible, from a file, with machine-readable output:
+vizzy --private --repos @repos.txt --yes --json
+
+# "What have I already exposed?" — exits non-zero on a danger finding:
+vizzy --audit --format sarif > results.sarif
+
+# Pre-publish readiness for the repo in the current directory:
+vizzy --check
+```
+
+For a ready-made GitHub Action, see [GitHub Action](#github-action).
 
 ## How it works
 
