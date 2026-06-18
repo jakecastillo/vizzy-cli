@@ -16,6 +16,7 @@
  */
 
 import { scanPaths } from './sensitive.js';
+import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,7 @@ export type ConfirmLevel = 'y' | 'phrase' | 'name';
 export interface Finding {
   kind:
     | 'secret-file'
+    | 'secret-content'
     | 'no-license'
     | 'stale'
     | 'high-profile'
@@ -83,14 +85,17 @@ function deriveConfirmLevel(severity: Severity): ConfirmLevel {
 /**
  * Pure assessment of a single repo.
  *
- * @param repo     - The repo metadata.
- * @param paths    - File paths from the repo tree, or null if unavailable.
- * @param opts     - Injected thresholds and reference time (makes tests deterministic).
+ * @param repo         - The repo metadata.
+ * @param paths        - File paths from the repo tree, or null if unavailable.
+ * @param opts         - Injected thresholds and reference time (makes tests deterministic).
+ * @param contentHits  - Optional content-scan hits (from core/content.ts scanContent).
+ *                       Each hit produces one secret-content danger finding.
  */
 export function assess(
   repo: Repo,
   paths: string[] | null,
   opts: AssessOptions,
+  contentHits?: ContentHit[],
 ): RepoAssessment {
   const findings: Finding[] = [];
 
@@ -111,6 +116,18 @@ export function assess(
         severity: 'danger',
         label: `${hit.path} tracked`,
         detail: hit.path,
+      });
+    }
+  }
+
+  // ── secret-content (danger) — one finding per content hit ─────────────────
+  if (contentHits) {
+    for (const hit of contentHits) {
+      findings.push({
+        kind: 'secret-content',
+        severity: 'danger',
+        label: `Secret detected in content (${hit.rule})`,
+        detail: hit.match,
       });
     }
   }

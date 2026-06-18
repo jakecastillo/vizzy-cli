@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { assessRepos } from './scan.js';
-import type { TreeFetcher } from './scan.js';
+import type { TreeFetcher, ContentFetcher } from './scan.js';
 import type { AssessOptions } from './checks.js';
 import type { Repo } from '../types.js';
 
@@ -252,5 +252,101 @@ describe('assessRepos — edge cases', () => {
     const results = await assessRepos([], fetcher, OPTS);
     expect(results).toEqual([]);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Content pass — opt-in, injected, bounded
+// ---------------------------------------------------------------------------
+
+describe('assessRepos — content pass (deep=true)', () => {
+  it('is NOT run by default (no contentFetcher option)', async () => {
+    // Even when paths include a .env-like file, without deep the content fetcher
+    // should never be called.
+    const contentFetcher: ContentFetcher = vi.fn().mockResolvedValue('secret content');
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({ paths: ['config.js'], truncated: false });
+
+    // Without deep/contentFetcher, content fetcher is never called
+    await assessRepos(repos, treeFetcher, OPTS);
+    expect(contentFetcher).not.toHaveBeenCalled();
+  });
+
+  it('calls contentFetcher for suspicious text blobs when deep=true', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    // .env is suspicious; should trigger content fetch
+    const treeFetcher: TreeFetcher = async () => ({
+      paths: ['.env'],
+      truncated: false,
+    });
+    const contentFetcher: ContentFetcher = vi.fn().mockResolvedValue('AWS_KEY=AKIAIOSFODNN7EXAMPLE1');
+
+    await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
+    expect(contentFetcher).toHaveBeenCalled();
+  });
+
+  it('content hit → secret-content danger finding', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({
+      paths: ['secrets.txt'],
+      truncated: false,
+    });
+    // The content fetcher returns text with a valid AWS access key ID (AKIA + 16 chars)
+    const awsKey = 'AKIAIOSFODNN7EXAMPLE';
+    const contentFetcher: ContentFetcher = vi.fn().mockResolvedValue(`AWS_KEY=${awsKey}\n`);
+
+    const [result] = await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-content');
+    expect(result!.severity).toBe('danger');
+  });
+
+  it('is bounded: does not call contentFetcher for non-suspicious files', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({
+      // Only safe files — content fetch should not happen
+      paths: ['src/index.ts', 'README.md', 'package.json'],
+      truncated: false,
+    });
+    const contentFetcher: ContentFetcher = vi.fn().mockResolvedValue('safe content');
+
+    await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
+    // Non-suspicious paths should not be fetched
+    expect(contentFetcher).not.toHaveBeenCalled();
+  });
+
+  it('content fetch error → scan-incomplete finding, never silent clean', async () => {
+    // Use a path that classifyPath flags (so content fetch is attempted) but
+    // use a repo that would otherwise be clean — verifying that a fetch failure
+    // is never silently ignored.
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({
+      // secrets.txt is classified as suspicious (secrets.*), but triggers content
+      // scanning. With a failed fetch we must get scan-incomplete, not silent clean.
+      paths: ['secrets.txt'],
+      truncated: false,
+    });
+    const contentFetcher: ContentFetcher = vi.fn().mockRejectedValue(new Error('blob fetch failed'));
+
+    const [result] = await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
+    const kinds = result!.findings.map((f) => f.kind);
+    // scan-incomplete must be present
+    expect(kinds).toContain('scan-incomplete');
+    // severity must not be clean (at minimum caution)
+    expect(result!.severity).not.toBe('clean');
+  });
+
+  it('no-hit content → no secret-content finding', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({
+      paths: ['.env'],
+      truncated: false,
+    });
+    // Content with no pattern matches
+    const contentFetcher: ContentFetcher = vi.fn().mockResolvedValue('PLACEHOLDER=nothing_here');
+
+    const [result] = await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).not.toContain('secret-content');
   });
 });

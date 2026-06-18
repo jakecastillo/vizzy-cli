@@ -142,3 +142,27 @@ export function makeSetter(octokit: Octokit): VisibilitySetter {
     }
   };
 }
+
+/**
+ * Fetch the text content of a blob by its SHA.
+ *
+ * GitHub's Blobs API returns content as base64 (with possible embedded newlines).
+ * Errors propagate to the caller — they should become scan-incomplete upstream.
+ *
+ * @param octokit - Octokit instance (or compatible subset).
+ * @param owner   - Repository owner.
+ * @param repo    - Repository name.
+ * @param sha     - Blob SHA.
+ * @returns       - Decoded UTF-8 text content.
+ */
+export async function getBlobText(
+  octokit: Pick<Octokit, 'rest'>,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<string> {
+  const { data } = await octokit.rest.git.getBlob({ owner, repo, file_sha: sha });
+  // GitHub wraps base64 at 60 characters with \n — strip all whitespace before decoding.
+  const clean = (data.content as string).replace(/\s/g, '');
+  return Buffer.from(clean, 'base64').toString('utf8');
+}

@@ -124,6 +124,7 @@ const SARIF_SCHEMA =
 /** Human-readable descriptions for each finding kind. */
 const KIND_DESCRIPTIONS: Record<Finding['kind'], string> = {
   'secret-file': 'A file matching a known-secret pattern is tracked in the repository.',
+  'secret-content': 'A high-confidence secret pattern was detected in file content.',
   'no-license': 'The repository has no detected license.',
   'stale': 'The repository has not been pushed to recently.',
   'high-profile': 'The repository has a high star count and increased exposure.',

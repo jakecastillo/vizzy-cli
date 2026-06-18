@@ -7,6 +7,7 @@ import {
   setVisibility,
   explainError,
   makeSetter,
+  getBlobText,
   type RawRepo,
 } from './github.js';
 
@@ -192,5 +193,34 @@ describe('listRepoTree', () => {
       tree_sha: 'develop',
       recursive: '1',
     });
+  });
+});
+
+describe('getBlobText', () => {
+  it('base64-decodes blob content and returns a string', async () => {
+    const content = 'hello world\n';
+    const encoded = Buffer.from(content).toString('base64');
+    const getBlob = vi.fn().mockResolvedValue({ data: { content: encoded, encoding: 'base64' } });
+    const octokit = { rest: { git: { getBlob } } };
+    const result = await getBlobText(octokit as never, 'me', 'r', 'abc123sha');
+    expect(result).toBe(content);
+    expect(getBlob).toHaveBeenCalledWith({ owner: 'me', repo: 'r', file_sha: 'abc123sha' });
+  });
+
+  it('handles content with newlines in base64 (GitHub API wraps at 60 chars)', async () => {
+    const content = 'AKIAIOSFODNN7EXAMPLE1234\n';
+    const encoded = Buffer.from(content).toString('base64');
+    // GitHub API wraps base64 at 60 chars with \n
+    const wrapped = encoded.match(/.{1,60}/g)!.join('\n');
+    const getBlob = vi.fn().mockResolvedValue({ data: { content: wrapped, encoding: 'base64' } });
+    const octokit = { rest: { git: { getBlob } } };
+    const result = await getBlobText(octokit as never, 'me', 'r', 'sha99');
+    expect(result).toBe(content);
+  });
+
+  it('propagates errors (→ scan-incomplete upstream)', async () => {
+    const getBlob = vi.fn().mockRejectedValue(new Error('blob not found'));
+    const octokit = { rest: { git: { getBlob } } };
+    await expect(getBlobText(octokit as never, 'me', 'r', 'badsha')).rejects.toThrow('blob not found');
   });
 });
