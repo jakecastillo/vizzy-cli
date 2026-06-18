@@ -12,13 +12,14 @@ import { runAudit } from './audit.js';
 const flags = parseArgs();
 
 // --audit: non-interactive mode — run before TTY check and Ink render.
+// Exit-code contract: 0 ok/clean · 1 danger or apply-failure · 2 usage error · 3 auth/network error
 if (flags.audit) {
   let token: string;
   try {
     token = await getToken();
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
+    process.exit(3); // exit 3 = auth/network error
   }
 
   const octokit = makeOctokit(token);
@@ -34,6 +35,7 @@ if (flags.audit) {
         highProfileStars: 10,
         now: new Date(),
       },
+      format: flags.format,
     },
   );
   process.exit(code);

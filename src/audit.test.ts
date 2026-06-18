@@ -236,6 +236,167 @@ describe('runAudit — report content', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// NEW: format tests (bead vizzy-cli-9cm.2)
+// ---------------------------------------------------------------------------
+
+describe('runAudit — format: json', () => {
+  it('emits valid JSON to stdout when format is json', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'json' };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    // Must be valid JSON
+    const parsed = JSON.parse(output);
+    expect(parsed).toHaveProperty('repos');
+    expect(Array.isArray(parsed.repos)).toBe(true);
+    expect(parsed.repos[0].repo).toBe('octocat/pub-repo');
+    expect(parsed.repos[0].severity).toBe('danger');
+  });
+
+  it('still returns exit code 1 on danger with json format', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'danger-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'json' };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(1);
+  });
+
+  it('still returns exit code 0 when clean with json format', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'clean-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['src/index.ts'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'json' };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(0);
+  });
+
+  it('json output contains findings array per repo', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'json' };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    const parsed = JSON.parse(output);
+    expect(Array.isArray(parsed.repos[0].findings)).toBe(true);
+    expect(parsed.repos[0].findings.length).toBeGreaterThan(0);
+    expect(parsed.repos[0].findings[0]).toHaveProperty('kind');
+    expect(parsed.repos[0].findings[0]).toHaveProperty('severity');
+    expect(parsed.repos[0].findings[0]).toHaveProperty('label');
+  });
+});
+
+describe('runAudit — format: sarif', () => {
+  it('emits valid SARIF 2.1.0 to stdout when format is sarif', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'sarif' };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    const parsed = JSON.parse(output);
+    expect(parsed.$schema).toContain('sarif-schema-2.1.0');
+    expect(parsed.version).toBe('2.1.0');
+    expect(Array.isArray(parsed.runs)).toBe(true);
+    expect(parsed.runs[0].tool.driver.name).toBe('vizzy');
+    expect(Array.isArray(parsed.runs[0].results)).toBe(true);
+  });
+
+  it('still returns exit code 1 on danger with sarif format', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'danger-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'sarif' };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(1);
+  });
+
+  it('still returns exit code 0 when clean with sarif format', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'clean-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['src/index.ts'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'sarif' };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(0);
+  });
+
+  it('sarif tool.driver.version matches package version', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'sarif' };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    const parsed = JSON.parse(output);
+    // Version should be a valid semver-like string from package.json
+    expect(typeof parsed.runs[0].tool.driver.version).toBe('string');
+    expect(parsed.runs[0].tool.driver.version.length).toBeGreaterThan(0);
+  });
+});
+
+describe('runAudit — format: text (default)', () => {
+  it('defaults to text format when format is not specified', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    // Text format: NOT valid JSON
+    expect(() => JSON.parse(output)).toThrow();
+    expect(output).toContain('pub-repo');
+  });
+
+  it('explicit format: text produces human-readable text (not JSON)', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS, format: 'text' };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    expect(() => JSON.parse(output)).toThrow();
+    expect(output).toContain('pub-repo');
+  });
+});
+
 describe('runAudit — no GitHub writes', () => {
   it('never reaches the github write surface (setVisibility/makeSetter)', async () => {
     // Spy on the REAL github exports so that a regression which imported and

@@ -61,4 +61,31 @@ describe('parseArgs', () => {
       parseArgs(['--audit', '--dry-run'], { exitOverride: true }),
     ).toThrow();
   });
+
+  // --- new flags (bead vizzy-cli-9cm.2) ---
+
+  it('parses --format json as format: json', () => {
+    const f = parseArgs(['--format', 'json']);
+    expect(f.format).toBe('json');
+  });
+
+  it('parses --format sarif as format: sarif', () => {
+    const f = parseArgs(['--format', 'sarif']);
+    expect(f.format).toBe('sarif');
+  });
+
+  it('parses --format text as format: text', () => {
+    const f = parseArgs(['--format', 'text']);
+    expect(f.format).toBe('text');
+  });
+
+  it('--json is an alias for --format json', () => {
+    const f = parseArgs(['--json']);
+    expect(f.format).toBe('json');
+  });
+
+  it('format defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.format).toBeUndefined();
+  });
 });
