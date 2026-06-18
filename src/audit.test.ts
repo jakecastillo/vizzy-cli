@@ -468,3 +468,236 @@ describe('runAudit — no GitHub writes', () => {
     makeSetterSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// NEW: snapshot / drift wiring (bead vizzy-cli-9cm.11)
+// ---------------------------------------------------------------------------
+
+import type { SnapshotState } from './core/snapshot.js';
+
+describe('runAudit — snapshot write (first run)', () => {
+  it('writes the current snapshot via writeSnapshot on first run', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    let written: SnapshotState | null = null;
+    const writeSnapshot = (_path: string, state: SnapshotState) => { written = state; };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => null, // first run — no prior
+      writeSnapshot,
+    };
+    await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    expect(written).not.toBeNull();
+    expect(written!['pub-repo']).toBeDefined();
+    expect(written!['pub-repo'].visibility).toBe('public');
+    expect(written!['pub-repo'].fingerprints.length).toBeGreaterThan(0);
+  });
+
+  it('first-run returns standard exit code (1 on danger)', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => null,
+      writeSnapshot: () => {},
+      failOnNew: true, // failOnNew with no prior → standard exit code
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    // First run: no prior snapshot → standard danger exit code applies
+    expect(code!).toBe(1);
+  });
+});
+
+describe('runAudit — snapshot diff / drift headlines', () => {
+  it('headlines newly-public repos in text output', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-a', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: [], truncated: false });
+
+    const prevState: SnapshotState = {
+      'repo-a': { visibility: 'private', fingerprints: [] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+    };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    expect(output).toContain('Drift');
+    expect(output).toContain('newly public');
+    expect(output).toContain('repo-a');
+  });
+
+  it('headlines new findings in text output', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-b', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const prevState: SnapshotState = {
+      'repo-b': { visibility: 'public', fingerprints: [] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+    };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    expect(output).toContain('Drift');
+    expect(output).toContain('new findings');
+  });
+
+  it('headlines resolved findings in text output', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-c', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: [], truncated: false }); // .env gone
+
+    const prevState: SnapshotState = {
+      'repo-c': { visibility: 'public', fingerprints: ['secret-file:.env'] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+    };
+    const output = await captureStdout(async () => {
+      await runAudit(loadRepos, treeFetch, opts);
+    });
+
+    expect(output).toContain('Resolved');
+    expect(output).toContain('repo-c');
+  });
+});
+
+describe('runAudit — --fail-on-new exit code', () => {
+  it('returns 0 when pre-existing danger findings but no new exposure', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-debt', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    // Prior snapshot already has this finding — it's pre-existing debt
+    const prevState: SnapshotState = {
+      'repo-debt': { visibility: 'public', fingerprints: ['secret-file:.env'] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+      failOnNew: true,
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    // Pre-existing debt → 0 with failOnNew
+    expect(code!).toBe(0);
+  });
+
+  it('returns 1 when there are new findings vs snapshot', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-new', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false }); // new finding
+
+    const prevState: SnapshotState = {
+      'repo-new': { visibility: 'public', fingerprints: [] }, // was clean before
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+      failOnNew: true,
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(1);
+  });
+
+  it('returns 1 when a repo becomes newly public vs snapshot', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-exposed', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: [], truncated: false });
+
+    const prevState: SnapshotState = {
+      'repo-exposed': { visibility: 'private', fingerprints: [] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+      failOnNew: true,
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(1);
+  });
+
+  it('returns 0 when nothing changed vs snapshot (no new, no resolved)', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-stable', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: [], truncated: false });
+
+    const prevState: SnapshotState = {
+      'repo-stable': { visibility: 'public', fingerprints: [] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+      failOnNew: true,
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(0);
+  });
+
+  it('without failOnNew, returns 1 on pre-existing danger even with snapshot', async () => {
+    const repos: Repo[] = [makeRepo({ name: 'repo-debt', visibility: 'public' })];
+    const loadRepos = async () => repos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const prevState: SnapshotState = {
+      'repo-debt': { visibility: 'public', fingerprints: ['secret-file:.env'] },
+    };
+
+    const opts: AuditOpts = {
+      assessOpts: ASSESS_OPTS,
+      readSnapshot: () => prevState,
+      writeSnapshot: () => {},
+      // failOnNew NOT set — standard exit code
+    };
+    let code: number;
+    await captureStdout(async () => {
+      code = await runAudit(loadRepos, treeFetch, opts);
+    });
+    expect(code!).toBe(1);
+  });
+});

@@ -6,14 +6,17 @@
  *   2. Filters to currently-PUBLIC repos only.
  *   3. Runs assessRepos() over them (injectable treeFetch — no GitHub writes).
  *   4. Emits a report to stdout in the requested format (text/json/sarif).
- *   5. Returns the appropriate exit code.
+ *   5. Reads/writes .vizzy/state.json (injected fs helpers — testable).
+ *   6. When a prior snapshot exists, headlines the deltas.
+ *   7. Returns the appropriate exit code.
  *
  * No setVisibility calls — this is a read-only audit.
  * Designed to be wired into bin.tsx before the TTY check + Ink render.
  *
  * Exit-code contract:
- *   0  ok / clean — no danger findings
+ *   0  ok / clean — no danger findings (or --fail-on-new and no new exposure)
  *   1  danger finding detected in one or more public repos
+ *       (or --fail-on-new and new exposure/findings vs snapshot)
  *   (2 = usage error and 3 = auth/network are handled at the bin.tsx layer)
  */
 
@@ -23,6 +26,8 @@ import type { AssessOptions } from './core/checks.js';
 import type { Repo } from './types.js';
 import { toJsonReport, toSarif } from './core/report.js';
 import { VERSION } from './version.js';
+import { snapshot, diffSnapshot } from './core/snapshot.js';
+import type { SnapshotState } from './core/snapshot.js';
 
 // ---------------------------------------------------------------------------
 // Exported types
@@ -40,6 +45,33 @@ export interface AuditOpts {
    * - 'sarif' — SARIF 2.1.0 via toSarif from core/report
    */
   format?: 'text' | 'json' | 'sarif';
+
+  // ── Snapshot / drift options ───────────────────────────────────────────────
+
+  /**
+   * Path to the state file (default: '.vizzy/state.json').
+   * Injected so tests can use a temp path or in-memory stub.
+   */
+  snapshotPath?: string;
+  /**
+   * Injected reader for the snapshot state file.
+   * Must return the parsed SnapshotState or null if the file doesn't exist yet.
+   * Errors are swallowed (treated as first-run).
+   */
+  readSnapshot?: (path: string) => SnapshotState | null;
+  /**
+   * Injected writer for the snapshot state file.
+   * Called after assessment completes. May throw (caller logs but does not abort).
+   */
+  writeSnapshot?: (path: string, state: SnapshotState) => void;
+  /**
+   * When true, the exit code is based on drift vs. the prior snapshot:
+   *   0  no new exposure/findings vs snapshot (pre-existing debt is tolerated)
+   *   1  newly-public repos OR new findings vs snapshot
+   * Overrides the standard danger-finding exit code when a prior snapshot exists.
+   * When no prior snapshot exists, behaves like the standard exit code (0 = clean).
+   */
+  failOnNew?: boolean;
 }
 
 /** Injected repo loader. In production this is () => listOwnerRepos(octokit). */
@@ -56,6 +88,7 @@ export type RepoLoader = () => Promise<Repo[]>;
  * @param treeFetch  - Injected tree fetcher; tests supply a stub, production wraps listRepoTree.
  * @param opts       - Assessment options + optional concurrency + optional output format.
  * @returns          - Exit code: 1 if any repo has a danger finding, else 0.
+ *                     With failOnNew + prior snapshot: 1 only on new exposure/findings.
  */
 export async function runAudit(
   loadRepos: RepoLoader,
@@ -107,7 +140,63 @@ export async function runAudit(
     }
   }
 
-  // Exit code: 1 if any repo has a danger finding.
+  // ── Snapshot / drift ────────────────────────────────────────────────────────
+
+  const currSnapshot = snapshot(assessments);
+
+  let prevSnapshot: SnapshotState | null = null;
+  let hasPrior = false;
+
+  if (opts.readSnapshot) {
+    const snapshotPath = opts.snapshotPath ?? '.vizzy/state.json';
+    try {
+      prevSnapshot = opts.readSnapshot(snapshotPath);
+      hasPrior = prevSnapshot !== null;
+    } catch {
+      // Treat read errors as first-run; prevSnapshot stays null.
+    }
+  }
+
+  // Headline deltas when a prior snapshot exists and we're in text mode.
+  let hasNewExposure = false;
+  if (hasPrior && prevSnapshot !== null) {
+    const diff = diffSnapshot(prevSnapshot, currSnapshot);
+    hasNewExposure =
+      diff.newlyPublic.length > 0 || diff.newFindings.length > 0;
+
+    if (format === 'text') {
+      if (diff.newlyPublic.length > 0) {
+        process.stdout.write('\n⚠ Drift: newly public repos: ' + diff.newlyPublic.join(', ') + '\n');
+      }
+      if (diff.newFindings.length > 0) {
+        const summary = diff.newFindings.map((f) => `${f.repo} (${f.kind})`).join(', ');
+        process.stdout.write('⚠ Drift: new findings: ' + summary + '\n');
+      }
+      if (diff.resolved.length > 0) {
+        const summary = diff.resolved.map((f) => `${f.repo} (${f.kind})`).join(', ');
+        process.stdout.write('✓ Resolved: ' + summary + '\n');
+      }
+    }
+  }
+
+  // Write the current snapshot.
+  if (opts.writeSnapshot) {
+    const snapshotPath = opts.snapshotPath ?? '.vizzy/state.json';
+    try {
+      opts.writeSnapshot(snapshotPath, currSnapshot);
+    } catch {
+      // Write errors are non-fatal; the audit result is still valid.
+    }
+  }
+
+  // ── Exit code ───────────────────────────────────────────────────────────────
+
+  // --fail-on-new: only exit non-zero when there is new exposure vs snapshot.
+  if (opts.failOnNew && hasPrior) {
+    return hasNewExposure ? 1 : 0;
+  }
+
+  // Standard: exit code 1 if any repo has a danger finding.
   const hasDanger = assessments.some((a) => a.severity === 'danger');
   return hasDanger ? 1 : 0;
 }

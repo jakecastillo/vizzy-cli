@@ -69,6 +69,12 @@ export interface CliFlags {
    * listOwnerRepos. READ-ONLY audit path only — write flags are rejected.
    */
   org?: string;
+  /**
+   * Exit non-zero ONLY when there is new exposure or new findings vs the
+   * prior snapshot (.vizzy/state.json). Pre-existing debt does not trigger
+   * a non-zero exit. No effect when no prior snapshot exists.
+   */
+  failOnNew?: boolean;
 }
 
 export function parseArgs(
@@ -123,6 +129,10 @@ export function parseArgs(
     .addOption(
       new Option('--org <name>', 'audit a GitHub org (read-only; cannot be combined with write flags)')
         .conflicts(['public', 'private']),
+    )
+    .option(
+      '--fail-on-new',
+      'exit non-zero only when there is new exposure or new findings vs the prior snapshot (--audit)',
     );
 
   if (opts.exitOverride) program.exitOverride();
