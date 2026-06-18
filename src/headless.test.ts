@@ -208,6 +208,29 @@ describe('runHeadless — danger repos', () => {
     expect(code).toBe(0);
   });
 
+  it('--json + a skipped danger repo emits valid JSON and still exits 1', async () => {
+    const repo = makeRepo({ name: 'danger-repo', visibility: 'private' });
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      loadRepos: async () => [repo],
+      setter,
+      treeFetch: async () => ({ paths: ['.env'], truncated: false }),
+    };
+
+    const flags: HeadlessFlags = { target: 'public', allEligible: true, json: true };
+    let code!: number;
+    const out = await captureStdout(async () => {
+      code = await runHeadless(deps, flags, BASE_OPTS);
+    });
+
+    // Machine output is valid JSON...
+    expect(() => JSON.parse(out)).not.toThrow();
+    // ...the danger repo was NOT applied...
+    expect(setter).not.toHaveBeenCalled();
+    // ...and the exit code still honors the contract (danger present → 1).
+    expect(code).toBe(1);
+  });
+
   it('applies danger repos WITH --allow-danger and returns 0 on success', async () => {
     const repo = makeRepo({ name: 'danger-repo', visibility: 'private' });
     const setter = vi.fn().mockResolvedValue(undefined);

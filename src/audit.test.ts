@@ -499,23 +499,29 @@ describe('runAudit — snapshot write (first run)', () => {
     expect(written!['pub-repo'].fingerprints.length).toBeGreaterThan(0);
   });
 
-  it('first-run returns standard exit code (1 on danger)', async () => {
+  it('--fail-on-new on the FIRST run establishes a baseline and exits 0 even with danger', async () => {
+    // The point of --fail-on-new: break CI only on NEW exposure, not pre-existing
+    // debt. On the first run there is no baseline to compare against, so nothing is
+    // "new" — record the snapshot and exit 0 even though .env is a danger finding.
     const repos: Repo[] = [makeRepo({ name: 'pub-repo', visibility: 'public' })];
     const loadRepos = async () => repos;
     const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
 
+    const written: Array<unknown> = [];
     const opts: AuditOpts = {
       assessOpts: ASSESS_OPTS,
-      readSnapshot: () => null,
-      writeSnapshot: () => {},
-      failOnNew: true, // failOnNew with no prior → standard exit code
+      readSnapshot: () => null, // first run — no prior baseline
+      writeSnapshot: (_p, state) => {
+        written.push(state);
+      },
+      failOnNew: true,
     };
     let code: number;
     await captureStdout(async () => {
       code = await runAudit(loadRepos, treeFetch, opts);
     });
-    // First run: no prior snapshot → standard danger exit code applies
-    expect(code!).toBe(1);
+    expect(code!).toBe(0); // baseline established, no NEW exposure → exit 0
+    expect(written).toHaveLength(1); // the baseline snapshot was recorded
   });
 });
 

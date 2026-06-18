@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { render } from 'ink';
 import { parseArgs } from './cli.js';
@@ -56,6 +56,20 @@ if (flags.audit) {
         now: new Date(),
       },
       format: flags.format,
+      // Drift: read/write .vizzy/state.json so --fail-on-new compares against it.
+      failOnNew: flags.failOnNew,
+      snapshotPath: join(process.cwd(), '.vizzy', 'state.json'),
+      readSnapshot: (p) => {
+        try {
+          return JSON.parse(readFileSync(p, 'utf8'));
+        } catch {
+          return null; // first run / unreadable → no baseline
+        }
+      },
+      writeSnapshot: (p, state) => {
+        mkdirSync(dirname(p), { recursive: true });
+        writeFileSync(p, JSON.stringify(state, null, 2) + '\n');
+      },
     },
   );
   process.exit(code);

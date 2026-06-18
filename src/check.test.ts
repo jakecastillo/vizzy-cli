@@ -444,7 +444,8 @@ describe('runCheck — error path', () => {
 // ---------------------------------------------------------------------------
 
 describe('runCheck — content scan (deep, always-on)', () => {
-  it('returns exit code 1 when content scan finds a secret', async () => {
+  it('produces a secret-content finding (not just the filename match) when a real key is in content', async () => {
+    let fetched = '';
     const deps = makeDeps({
       treeFetch: async () => ({
         items: [
@@ -452,21 +453,29 @@ describe('runCheck — content scan (deep, always-on)', () => {
           { path: 'README.md', size: 2048 },
           { path: 'CONTRIBUTING.md', size: 512 },
           { path: 'CODE_OF_CONDUCT.md', size: 256 },
-          // A suspicious filename that content scan will be run on:
+          // A suspicious filename that the content scan will fetch + scan.
           { path: '.env.local', size: 100 },
         ],
         truncated: false,
       }),
-      contentFetcher: async (_repo, _path) => {
-        // Return a fake AWS key to trigger secret-content finding
-        return 'AKIAIOSFODNN7EXAMPLE1234';
+      contentFetcher: async (_repo, path) => {
+        fetched = path;
+        // A VALID AWS access key id: AKIA + exactly 16 [0-9A-Z]. The previous
+        // fixture had trailing chars so it never matched /\bAKIA[0-9A-Z]{16}\b/,
+        // making the secret-content path silently untested.
+        return 'const k = "AKIAIOSFODNN7EXAMPLE";';
       },
     });
     let code!: number;
-    await captureStdout(async () => {
+    const out = await captureStdout(async () => {
       code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
     });
     expect(code).toBe(1);
+    // The content fetcher actually ran on the suspicious file...
+    expect(fetched).toBe('.env.local');
+    // ...and a content secret was reported (proves the secret-content path, not
+    // only the secret-file filename match).
+    expect(out).toContain('Secret in content');
   });
 });
 

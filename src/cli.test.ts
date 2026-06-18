@@ -154,4 +154,16 @@ describe('parseArgs', () => {
       parseArgs(['--org', 'acme', '--private'], { exitOverride: true }),
     ).toThrow();
   });
+
+  it('--check with an explicit owner/repo captures the repo ref', () => {
+    expect(parseArgs(['--check', 'octocat/hello']).check).toBe('octocat/hello');
+  });
+
+  it('--check with no argument is boolean true (infer from cwd remote)', () => {
+    expect(parseArgs(['--check']).check).toBe(true);
+  });
+
+  it('check is undefined when --check is absent', () => {
+    expect(parseArgs([]).check).toBeUndefined();
+  });
 });

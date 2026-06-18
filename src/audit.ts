@@ -191,8 +191,11 @@ export async function runAudit(
 
   // ── Exit code ───────────────────────────────────────────────────────────────
 
-  // --fail-on-new: only exit non-zero when there is new exposure vs snapshot.
-  if (opts.failOnNew && hasPrior) {
+  // --fail-on-new: exit non-zero ONLY on new exposure vs the snapshot. On the
+  // first run (no prior snapshot) nothing is "new" — we establish the baseline
+  // and exit 0 even if pre-existing danger is present (the whole point: only
+  // break CI on NEW exposure, not pre-existing debt).
+  if (opts.failOnNew) {
     return hasNewExposure ? 1 : 0;
   }
 
