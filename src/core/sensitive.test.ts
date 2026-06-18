@@ -164,3 +164,34 @@ describe('scanPaths', () => {
     expect(hits[0]!.path).toBe('src/config/credentials.json');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Custom rules (extra param, from .vizzyscan) — allow beats deny
+// ---------------------------------------------------------------------------
+
+describe('classifyPath — extra custom rules', () => {
+  it('a custom deny glob flags a path the built-in rules ignore', () => {
+    const hit = classifyPath('config/app.secret.yaml', {
+      deny: ['*.secret.yaml'],
+      allow: [],
+    });
+    expect(hit).not.toBeNull();
+    expect(hit!.rule).toBe('custom-deny');
+  });
+
+  it('an allow glob overrides a BUILT-IN danger rule (allow beats deny)', () => {
+    // .env is normally flagged; an allowlist entry spares it.
+    expect(classifyPath('.env', { deny: [], allow: ['.env'] })).toBeNull();
+  });
+
+  it('an allow glob overrides a CUSTOM deny glob (allow wins on conflict)', () => {
+    expect(
+      classifyPath('build.notes', { deny: ['build.notes'], allow: ['build.notes'] }),
+    ).toBeNull();
+  });
+
+  it('no extra rules behaves exactly like the default classifier', () => {
+    expect(classifyPath('.env', { deny: [], allow: [] })?.rule).toBe('env-file');
+    expect(classifyPath('README.md', { deny: [], allow: [] })).toBeNull();
+  });
+});

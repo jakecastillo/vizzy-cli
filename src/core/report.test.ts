@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { toJsonReport, toSarif } from './report.js';
+import { VERSION } from '../version.js';
 import type { RepoAssessment, Finding } from './checks.js';
 import type { Repo } from '../types.js';
 
@@ -104,6 +105,14 @@ describe('toJsonReport', () => {
     expect(finding.label).toBe('.env tracked');
   });
 
+  it('preserves the finding detail field', () => {
+    const assessment = makeAssessment({ name: 'beta' }, [DANGER_FINDING]);
+    const result = toJsonReport([assessment]) as {
+      repos: Array<{ findings: Array<{ detail?: string }> }>;
+    };
+    expect(result.repos[0].findings[0].detail).toBe('.env');
+  });
+
   it('handles multiple repos', () => {
     const assessments = [
       makeAssessment({ name: 'repo-a' }, [DANGER_FINDING]),
@@ -163,10 +172,19 @@ describe('toSarif', () => {
       runs: Array<{ tool: { driver: { name: string; version: string } } }>;
     };
     const driver = result.runs[0].tool.driver;
-    expect(driver).toHaveProperty('name');
-    expect(typeof driver.name).toBe('string');
-    expect(driver.name.length).toBeGreaterThan(0);
+    expect(driver.name).toBe('vizzy');
     expect(driver).toHaveProperty('version');
+  });
+
+  it('driver.version defaults to the package version (no drift) and is overridable', () => {
+    const def = toSarif([makeAssessment()]) as {
+      runs: Array<{ tool: { driver: { version: string } } }>;
+    };
+    expect(def.runs[0].tool.driver.version).toBe(VERSION);
+    const overridden = toSarif([makeAssessment()], '9.9.9') as {
+      runs: Array<{ tool: { driver: { version: string } } }>;
+    };
+    expect(overridden.runs[0].tool.driver.version).toBe('9.9.9');
   });
 
   it('run has rules derived from finding kinds', () => {

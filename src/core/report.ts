@@ -13,6 +13,7 @@
  */
 
 import type { RepoAssessment, Finding } from './checks.js';
+import { VERSION } from '../version.js';
 
 // ---------------------------------------------------------------------------
 // JSON report
@@ -146,7 +147,10 @@ function findingLevelToSarif(severity: Finding['severity']): SarifLevel {
  *     - level = "error" (danger) or "warning" (caution)
  *     - locations[0].logicalLocations[0].name = "owner/repo"
  */
-export function toSarif(assessments: RepoAssessment[]): SarifReport {
+export function toSarif(
+  assessments: RepoAssessment[],
+  version: string = VERSION,
+): SarifReport {
   // Collect all unique finding kinds across all assessments
   const kindsSeen = new Set<Finding['kind']>();
   for (const assessment of assessments) {
@@ -194,7 +198,7 @@ export function toSarif(assessments: RepoAssessment[]): SarifReport {
     tool: {
       driver: {
         name: 'vizzy',
-        version: '0.3.0',
+        version,
         informationUri: 'https://github.com/jakecastillo/vizzy-cli',
         rules,
       },
