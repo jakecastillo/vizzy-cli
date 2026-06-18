@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import { render } from 'ink';
 import { parseArgs } from './cli.js';
 import { getToken } from './auth.js';
-import { makeOctokit, listOwnerRepos, makeSetter, listRepoTree, getBlobText, listHistoryFilenames, normalizeRepo } from './github.js';
+import { makeOctokit, listOwnerRepos, listOrgRepos, makeSetter, listRepoTree, getBlobText, listHistoryFilenames, normalizeRepo } from './github.js';
 import { loadProtected } from './core/protected.js';
 import { loadScanRules } from './core/scanrules.js';
 import { App } from './ui/App.js';
@@ -18,6 +18,17 @@ const flags = parseArgs();
 // --audit: non-interactive mode — run before TTY check and Ink render.
 // Exit-code contract: 0 ok/clean · 1 danger or apply-failure · 2 usage error · 3 auth/network error
 if (flags.audit) {
+  // --org combined with write flags is a usage error (exit 2).
+  // Commander's .conflicts() handles --org + --public/--private at parse time,
+  // but guard defensively here as well for belt-and-suspenders.
+  if (flags.org && (flags.public || flags.private)) {
+    process.stderr.write(
+      'vizzy: --org cannot be combined with write flags (--public / --private).\n' +
+        'The --org flag is read-only (audit only).\n',
+    );
+    process.exit(2);
+  }
+
   let token: string;
   try {
     token = await getToken();
@@ -30,8 +41,13 @@ if (flags.audit) {
   const treeFetch = (repo: { owner: string; name: string; defaultBranch: string }) =>
     listRepoTree(octokit, repo.owner, repo.name, repo.defaultBranch);
 
+  // Use listOrgRepos when --org is given; otherwise fall back to personal repos.
+  const repoLoader = flags.org
+    ? () => listOrgRepos(octokit, flags.org!)
+    : () => listOwnerRepos(octokit);
+
   const code = await runAudit(
-    () => listOwnerRepos(octokit),
+    repoLoader,
     treeFetch,
     {
       assessOpts: {

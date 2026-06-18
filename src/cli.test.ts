@@ -130,4 +130,28 @@ describe('parseArgs', () => {
     const f = parseArgs([]);
     expect(f.allowDanger).toBeUndefined();
   });
+
+  // --- new flags (bead vizzy-cli-9cm.10) ---
+
+  it('parses --org acme as org: "acme"', () => {
+    const f = parseArgs(['--audit', '--org', 'acme']);
+    expect(f.org).toBe('acme');
+  });
+
+  it('org defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.org).toBeUndefined();
+  });
+
+  it('--org combined with --public is rejected (write + org = exit 2)', () => {
+    expect(() =>
+      parseArgs(['--org', 'acme', '--public'], { exitOverride: true }),
+    ).toThrow();
+  });
+
+  it('--org combined with --private is rejected (write + org = exit 2)', () => {
+    expect(() =>
+      parseArgs(['--org', 'acme', '--private'], { exitOverride: true }),
+    ).toThrow();
+  });
 });

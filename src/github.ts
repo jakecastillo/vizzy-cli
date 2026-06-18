@@ -78,6 +78,28 @@ export async function listOwnerRepos(
   return raw.map(normalizeRepo);
 }
 
+/**
+ * List all repos for a GitHub organization via GET /orgs/{org}/repos.
+ *
+ * Equivalent to listOwnerRepos but scoped to an org. Only usable on the
+ * read-only audit path — write paths stay personal-only.
+ *
+ * @param octokit - Octokit instance (or compatible subset with paginate + rest).
+ * @param org     - GitHub organization login.
+ * @returns       - Normalized Repo array.
+ */
+export async function listOrgRepos(
+  octokit: Pick<Octokit, 'paginate' | 'rest'>,
+  org: string,
+): Promise<Repo[]> {
+  const raw = (await octokit.paginate(octokit.rest.repos.listForOrg, {
+    org,
+    type: 'all',
+    per_page: 100,
+  })) as RawRepo[];
+  return raw.map(normalizeRepo);
+}
+
 export async function setVisibility(
   octokit: Octokit,
   owner: string,

@@ -3,6 +3,7 @@ import { RequestError } from '@octokit/request-error';
 import {
   normalizeRepo,
   listOwnerRepos,
+  listOrgRepos,
   listRepoTree,
   setVisibility,
   explainError,
@@ -297,5 +298,52 @@ describe('listHistoryFilenames', () => {
     const getCommit = vi.fn().mockRejectedValue(new Error('commit fetch failed'));
     const octokit = { rest: { repos: { listCommits, getCommit } } };
     await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('commit fetch failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listOrgRepos (bead vizzy-cli-9cm.10)
+// ---------------------------------------------------------------------------
+
+describe('listOrgRepos', () => {
+  it('paginates org repos via GET /orgs/{org}/repos and normalizes them', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'infra', private: false }),
+      raw({ name: 'backend', private: true }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos.map((r) => r.name)).toEqual(['infra', 'backend']);
+    expect(paginate).toHaveBeenCalledWith(
+      octokit.rest.repos.listForOrg,
+      { org: 'acme', type: 'all', per_page: 100 },
+    );
+  });
+
+  it('normalizes visibility from private flag', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'pub', private: false }),
+      raw({ name: 'priv', private: true }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos.find((r) => r.name === 'pub')!.visibility).toBe('public');
+    expect(repos.find((r) => r.name === 'priv')!.visibility).toBe('private');
+  });
+
+  it('returns an empty array when the org has no repos', async () => {
+    const paginate = vi.fn().mockResolvedValue([]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'empty-org');
+    expect(repos).toEqual([]);
+  });
+
+  it('normalizes owner to the org name (raw owner.login)', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'repo-x', owner: { login: 'acme' } }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos[0].owner).toBe('acme');
   });
 });

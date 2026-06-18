@@ -397,6 +397,50 @@ describe('runAudit — format: text (default)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// NEW: org audit path (bead vizzy-cli-9cm.10)
+// The audit path is already loader-injected; the org vs personal distinction
+// only differs in which loader is passed. This test documents that the same
+// runAudit function works when a loader returns org repos.
+// ---------------------------------------------------------------------------
+
+describe('runAudit — org audit path (bead vizzy-cli-9cm.10)', () => {
+  it('audits org public repos via an injected org loader and produces a roll-up', async () => {
+    // Simulate an org loader returning two public repos from "acme"
+    const orgRepos: Repo[] = [
+      makeRepo({ name: 'infra', owner: 'acme', visibility: 'public' }),
+      makeRepo({ name: 'frontend', owner: 'acme', visibility: 'public' }),
+      makeRepo({ name: 'private-backend', owner: 'acme', visibility: 'private' }),
+    ];
+    const loadOrgRepos = async () => orgRepos;
+    const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS };
+    const output = await captureStdout(async () => {
+      await runAudit(loadOrgRepos, treeFetch, opts);
+    });
+
+    // Both public org repos appear; the private one does not
+    expect(output).toContain('infra');
+    expect(output).toContain('frontend');
+    expect(output).not.toContain('private-backend');
+    // treeFetch called only for public repos (2 of 3)
+    expect(treeFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('org audit returns exit 1 when an org repo has danger findings', async () => {
+    const orgRepos: Repo[] = [
+      makeRepo({ name: 'danger-infra', owner: 'acme', visibility: 'public' }),
+    ];
+    const loadOrgRepos = async () => orgRepos;
+    const treeFetch: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+
+    const opts: AuditOpts = { assessOpts: ASSESS_OPTS };
+    const code = await runAudit(loadOrgRepos, treeFetch, opts);
+    expect(code).toBe(1);
+  });
+});
+
 describe('runAudit — no GitHub writes', () => {
   it('never reaches the github write surface (setVisibility/makeSetter)', async () => {
     // Spy on the REAL github exports so that a regression which imported and

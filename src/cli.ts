@@ -64,6 +64,11 @@ export interface CliFlags {
    * Value is "owner/repo" (explicit) or true (infer from cwd git remote).
    */
   check?: string | boolean;
+  /**
+   * GitHub org to audit. When set, --audit uses listOrgRepos instead of
+   * listOwnerRepos. READ-ONLY audit path only — write flags are rejected.
+   */
+  org?: string;
 }
 
 export function parseArgs(
@@ -114,6 +119,10 @@ export function parseArgs(
     .option(
       '--check [repo]',
       'pre-publish readiness check for one repo (owner/repo, or infer from cwd git remote)',
+    )
+    .addOption(
+      new Option('--org <name>', 'audit a GitHub org (read-only; cannot be combined with write flags)')
+        .conflicts(['public', 'private']),
     );
 
   if (opts.exitOverride) program.exitOverride();
