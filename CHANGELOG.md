@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-17
+
+The "exposure-safety platform" release: vizzy goes from an interactive visibility
+toggle to a scriptable, CI-embeddable exposure tool — deeper scanning, machine
+output, new commands, and an accessible UI.
+
+### Added
+
+- **Scriptable / headless mode** — run without the TUI: `--repos <a,b,c | @file | ->`,
+  `--all-eligible`, `--yes`, and `--allow-danger`. The exposure scan still runs;
+  a repo with a detected secret is **skipped and reported** unless explicitly
+  allowed. A documented exit-code contract (`0` ok · `1` danger/failure · `2`
+  usage · `3` auth/network) makes vizzy CI-friendly. No-TTY without headless flags
+  prints actionable guidance instead of crashing.
+- **`--json` / `--format text|json|sarif`** — machine-readable `--audit` output;
+  SARIF 2.1.0 uploads to GitHub Code Scanning.
+- **Deeper exposure scan in `vizzy check`** — beyond filename matching, `vizzy
+  check` scans **file content** (high-confidence keys: AWS, GitHub, Stripe, Slack,
+  Google, PEM private keys) and **git history** (a secret deleted from HEAD but
+  still recoverable → `secret-in-history`). The bulk going-public and `--audit`
+  flows use the fast filename + risk-signal scan; wiring content/history into them
+  (a `--deep` flag) is tracked as a follow-up.
+- **`vizzy --check [owner/repo]`** — a pre-publish readiness command for one repo
+  (secrets in tree + content + history, LICENSE, README/CONTRIBUTING/CODE_OF_CONDUCT,
+  large files), inferring the repo from the cwd git remote.
+- **`--org <name>`** — audit a GitHub org (read-only; write flags rejected).
+- **Drift detection** — `--audit` records `.vizzy/state.json`; `--fail-on-new`
+  exits non-zero only on NEW exposure vs the snapshot (pre-existing debt tolerated).
+- **Bulk archive** — `--archive` / `--unarchive` (headless; no exposure scan).
+- **`.vizzyscan`** — custom danger globs + an allowlist (allow beats deny).
+- **Per-repo consequences** in the confirm screen (e.g. "erases N stars",
+  "detaches forks").
+- **Accessible output** — `--plain` and the `NO_COLOR` env var disable ANSI color
+  and spinners.
+- **Distribution artifacts** — a `gh` extension shim (`gh-extension/gh-vizzy`), a
+  composite GitHub **Action** (`action.yml`) + example workflow, a staged
+  npm-provenance release workflow, and a VHS demo `.tape`. (Publishing / the
+  separate `gh-vizzy` repo / rendering the GIF are manual steps.)
+
 ## [0.2.0] - 2026-06-17
 
 ### Added
@@ -47,6 +86,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Auth via the `gh` CLI token, with `GH_TOKEN` / `GITHUB_TOKEN` fallback.
 - Concurrency-limited apply step with per-repo success/failure reporting.
 
-[Unreleased]: https://github.com/jakecastillo/vizzy-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jakecastillo/vizzy-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jakecastillo/vizzy-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jakecastillo/vizzy-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jakecastillo/vizzy-cli/releases/tag/v0.1.0

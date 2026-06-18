@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import pLimit from 'p-limit';
 import type { Repo, Visibility, VisibilitySetter } from './types.js';
 
 export function makeOctokit(token: string): Octokit {
@@ -13,6 +14,7 @@ export interface RawRepo {
   fork: boolean;
   archived: boolean;
   stargazers_count: number;
+  forks_count: number;
   pushed_at: string | null;
   default_branch: string;
   license: { spdx_id: string | null } | null;
@@ -26,6 +28,7 @@ export function normalizeRepo(raw: RawRepo): Repo {
     isFork: raw.fork,
     isArchived: raw.archived,
     stars: raw.stargazers_count,
+    forksCount: raw.forks_count,
     pushedAt: raw.pushed_at ?? '1970-01-01T00:00:00Z',
     defaultBranch: raw.default_branch ?? 'HEAD',
     license: raw.license?.spdx_id ?? null,
@@ -77,6 +80,28 @@ export async function listOwnerRepos(
   return raw.map(normalizeRepo);
 }
 
+/**
+ * List all repos for a GitHub organization via GET /orgs/{org}/repos.
+ *
+ * Equivalent to listOwnerRepos but scoped to an org. Only usable on the
+ * read-only audit path — write paths stay personal-only.
+ *
+ * @param octokit - Octokit instance (or compatible subset with paginate + rest).
+ * @param org     - GitHub organization login.
+ * @returns       - Normalized Repo array.
+ */
+export async function listOrgRepos(
+  octokit: Pick<Octokit, 'paginate' | 'rest'>,
+  org: string,
+): Promise<Repo[]> {
+  const raw = (await octokit.paginate(octokit.rest.repos.listForOrg, {
+    org,
+    type: 'all',
+    per_page: 100,
+  })) as RawRepo[];
+  return raw.map(normalizeRepo);
+}
+
 export async function setVisibility(
   octokit: Octokit,
   owner: string,
@@ -85,6 +110,22 @@ export async function setVisibility(
 ): Promise<void> {
   // Prefer the `visibility` string over the legacy `private` boolean.
   await octokit.rest.repos.update({ owner, repo, visibility });
+}
+
+/**
+ * Archive or unarchive a repository via PATCH /repos/{owner}/{repo}.
+ *
+ * Passing `archived: true` archives the repo (makes it read-only).
+ * Passing `archived: false` unarchives it (restores write access).
+ * Archiving is reversible and non-exposing — no exposure scan needed.
+ */
+export async function setArchived(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  archived: boolean,
+): Promise<void> {
+  await octokit.rest.repos.update({ owner, repo, archived });
 }
 
 interface HttpError {
@@ -140,5 +181,87 @@ export function makeSetter(octokit: Octokit): VisibilitySetter {
     } catch (err) {
       throw new Error(explainError(err));
     }
+  };
+}
+
+/**
+ * Fetch the text content of a blob by its SHA.
+ *
+ * GitHub's Blobs API returns content as base64 (with possible embedded newlines).
+ * Errors propagate to the caller — they should become scan-incomplete upstream.
+ *
+ * @param octokit - Octokit instance (or compatible subset).
+ * @param owner   - Repository owner.
+ * @param repo    - Repository name.
+ * @param sha     - Blob SHA.
+ * @returns       - Decoded UTF-8 text content.
+ */
+export async function getBlobText(
+  octokit: Pick<Octokit, 'rest'>,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<string> {
+  const { data } = await octokit.rest.git.getBlob({ owner, repo, file_sha: sha });
+  // GitHub wraps base64 at 60 characters with \n — strip all whitespace before decoding.
+  const clean = (data.content as string).replace(/\s/g, '');
+  return Buffer.from(clean, 'base64').toString('utf8');
+}
+
+/**
+ * Walk recent commits' changed files to collect the set of all filenames that
+ * have ever appeared in the recent history of a repository.
+ *
+ * Uses the List commits API (GET /repos/{owner}/{repo}/commits) with per_page
+ * set to maxCommits. Each commit's `files` array is flattened into a deduplicated
+ * set of paths.
+ *
+ * `truncated` is true when the API returned exactly maxCommits results, indicating
+ * there may be more history that was not examined.
+ *
+ * Errors propagate — callers should treat them as scan-incomplete.
+ *
+ * @param octokit    - Octokit instance (or compatible subset).
+ * @param owner      - Repository owner.
+ * @param repo       - Repository name.
+ * @param maxCommits - Maximum number of commits to inspect (default 100).
+ * @returns          - Deduplicated file paths seen across recent commits, and a
+ *                     truncated flag indicating whether the history window was capped.
+ */
+export async function listHistoryFilenames(
+  octokit: Pick<Octokit, 'rest'>,
+  owner: string,
+  repo: string,
+  maxCommits = 100,
+): Promise<{ paths: string[]; truncated: boolean }> {
+  // listCommits returns commit SUMMARIES with no `files` field — the changed
+  // files live only on the single-commit endpoint. So we fetch each commit
+  // (bounded by maxCommits) via getCommit, with bounded concurrency.
+  const { data: commits } = await octokit.rest.repos.listCommits({
+    owner,
+    repo,
+    per_page: maxCommits,
+  });
+
+  const limit = pLimit(5);
+  const perCommit = await Promise.all(
+    commits.map((c) =>
+      limit(async () => {
+        const { data: full } = await octokit.rest.repos.getCommit({
+          owner,
+          repo,
+          ref: c.sha,
+        });
+        return (full.files ?? [])
+          .map((f) => f.filename)
+          .filter((n): n is string => typeof n === 'string');
+      }),
+    ),
+  );
+
+  const seen = new Set<string>(perCommit.flat());
+  return {
+    paths: [...seen],
+    truncated: commits.length >= maxCommits,
   };
 }

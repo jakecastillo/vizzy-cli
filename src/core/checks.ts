@@ -16,6 +16,8 @@
  */
 
 import { scanPaths } from './sensitive.js';
+import type { ExtraRules } from './sensitive.js';
+import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,8 @@ export type ConfirmLevel = 'y' | 'phrase' | 'name';
 export interface Finding {
   kind:
     | 'secret-file'
+    | 'secret-content'
+    | 'secret-in-history'
     | 'no-license'
     | 'stale'
     | 'high-profile'
@@ -49,6 +53,8 @@ export interface AssessOptions {
   staleMonths: number;
   highProfileStars: number;
   now: Date;
+  /** Optional custom scan rules from .vizzyscan (deny globs + allow list). */
+  scanRules?: ExtraRules;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,14 +89,21 @@ function deriveConfirmLevel(severity: Severity): ConfirmLevel {
 /**
  * Pure assessment of a single repo.
  *
- * @param repo     - The repo metadata.
- * @param paths    - File paths from the repo tree, or null if unavailable.
- * @param opts     - Injected thresholds and reference time (makes tests deterministic).
+ * @param repo         - The repo metadata.
+ * @param paths        - File paths from the repo tree, or null if unavailable.
+ * @param opts         - Injected thresholds and reference time (makes tests deterministic).
+ * @param contentHits  - Optional content-scan hits (from core/content.ts scanContent).
+ *                       Each hit produces one secret-content danger finding.
+ * @param historyHits  - Optional filenames from commit history that match the sensitive
+ *                       classifier but are NOT present in the current HEAD tree.
+ *                       Each unique path produces one secret-in-history danger finding.
  */
 export function assess(
   repo: Repo,
   paths: string[] | null,
   opts: AssessOptions,
+  contentHits?: ContentHit[],
+  historyHits?: string[],
 ): RepoAssessment {
   const findings: Finding[] = [];
 
@@ -104,7 +117,7 @@ export function assess(
     });
   } else {
     // ── secret-file (danger) ─────────────────────────────────────────────────
-    const hits = scanPaths(paths);
+    const hits = scanPaths(paths, opts.scanRules);
     for (const hit of hits) {
       findings.push({
         kind: 'secret-file',
@@ -112,6 +125,34 @@ export function assess(
         label: `${hit.path} tracked`,
         detail: hit.path,
       });
+    }
+  }
+
+  // ── secret-content (danger) — one finding per content hit ─────────────────
+  if (contentHits) {
+    for (const hit of contentHits) {
+      findings.push({
+        kind: 'secret-content',
+        severity: 'danger',
+        label: `Secret detected in content (${hit.rule})`,
+        detail: hit.match,
+      });
+    }
+  }
+
+  // ── secret-in-history (danger) — sensitive file deleted from HEAD but seen in history ──
+  // Only flag files that are NOT currently in the HEAD tree (no double-counting).
+  if (historyHits && historyHits.length > 0) {
+    const headSet = new Set(paths ?? []);
+    for (const histPath of historyHits) {
+      if (!headSet.has(histPath)) {
+        findings.push({
+          kind: 'secret-in-history',
+          severity: 'danger',
+          label: `Secret deleted from history: ${histPath}`,
+          detail: histPath,
+        });
+      }
     }
   }
 

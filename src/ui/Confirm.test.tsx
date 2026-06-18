@@ -6,29 +6,33 @@ import { delay, KEY } from '../test-utils.js';
 import type { Repo } from '../types.js';
 import type { RepoAssessment } from '../core/checks.js';
 
-const repo = (name: string, v: Repo['visibility']): Repo => ({
+const repo = (name: string, v: Repo['visibility'], overrides: Partial<Repo> = {}): Repo => ({
   name,
   owner: 'me',
   visibility: v,
   isFork: false,
   isArchived: false,
   stars: 0,
+  forksCount: 0,
   pushedAt: '2024-01-01T00:00:00Z',
   defaultBranch: 'main',
   license: null,
+  ...overrides,
 });
 
 /** Build a RepoAssessment for a clean repo (empty paths, future pushedAt, has license). */
-const cleanRepo = (name: string): Repo => ({
+const cleanRepo = (name: string, overrides: Partial<Repo> = {}): Repo => ({
   name,
   owner: 'me',
   visibility: 'private',
   isFork: false,
   isArchived: false,
   stars: 0,
+  forksCount: 0,
   pushedAt: new Date().toISOString(), // not stale
   defaultBranch: 'main',
   license: 'MIT', // has license → not no-license
+  ...overrides,
 });
 
 const cleanAssessment = (r: Repo): RepoAssessment => ({
@@ -398,6 +402,62 @@ describe('Confirm — --force-public flag', () => {
     stdin.write(KEY.enter);
     await delay();
     expect(onConfirm).not.toHaveBeenCalled();
+    unmount();
+  });
+});
+
+describe('Confirm — consequences rendering', () => {
+  it('private confirm: shows erases-stars consequence when stars > 0', () => {
+    const r = repo('starred-repo', 'public', { stars: 7 });
+    const plan = buildPlan('private', [r]);
+    const { lastFrame, unmount } = render(<Confirm plan={plan} onConfirm={() => {}} />);
+    expect(lastFrame()).toContain('erases 7 stars');
+    unmount();
+  });
+
+  it('private confirm: omits erases-stars when stars === 0', () => {
+    const r = repo('no-stars-repo', 'public', { stars: 0 });
+    const plan = buildPlan('private', [r]);
+    const { lastFrame, unmount } = render(<Confirm plan={plan} onConfirm={() => {}} />);
+    expect(lastFrame()).not.toMatch(/erases.*star/);
+    unmount();
+  });
+
+  it('private confirm: shows detaches-forks consequence when forksCount > 0', () => {
+    const r = repo('forked-repo', 'public', { forksCount: 4 });
+    const plan = buildPlan('private', [r]);
+    const { lastFrame, unmount } = render(<Confirm plan={plan} onConfirm={() => {}} />);
+    expect(lastFrame()).toContain('detaches 4 forks');
+    unmount();
+  });
+
+  it('private confirm: shows unpublishes GitHub Pages', () => {
+    const r = repo('my-repo', 'public');
+    const plan = buildPlan('private', [r]);
+    const { lastFrame, unmount } = render(<Confirm plan={plan} onConfirm={() => {}} />);
+    expect(lastFrame()).toContain('unpublishes GitHub Pages');
+    unmount();
+  });
+
+  it('public confirm: shows publishes Actions logs', () => {
+    const r = cleanRepo('my-repo');
+    const plan = buildPlan('public', [r]);
+    const assessments = [cleanAssessment(r)];
+    const { lastFrame, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={() => {}} />,
+    );
+    expect(lastFrame()).toContain('publishes Actions logs');
+    unmount();
+  });
+
+  it('public confirm: shows disables push rulesets', () => {
+    const r = cleanRepo('my-repo');
+    const plan = buildPlan('public', [r]);
+    const assessments = [cleanAssessment(r)];
+    const { lastFrame, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={() => {}} />,
+    );
+    expect(lastFrame()).toContain('disables push rulesets');
     unmount();
   });
 });

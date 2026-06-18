@@ -21,6 +21,7 @@ const repo = (name: string, v: Repo['visibility']): Repo => ({
   isFork: false,
   isArchived: false,
   stars: 0,
+  forksCount: 0,
   pushedAt: '2024-01-01T00:00:00Z',
   defaultBranch: 'main',
   license: null,
@@ -32,6 +33,17 @@ const flags = (over: Partial<CliFlags> = {}): CliFlags => ({ forks: true, protec
 // unmount, so a completed flow's content lives in `frames`, not the last frame.
 const seen = (frames: string[], text: string): boolean =>
   frames.some((f) => f.toLowerCase().includes(text.toLowerCase()));
+
+// NOTE: vitest runs with chalk.level=0 which means Ink never emits ANSI color
+// escape codes regardless of what color props are set. Testing for the absence
+// of ANSI sequences is therefore VACUOUS in this environment — the sequences
+// are always absent. Instead we test the behavioural consequence that IS
+// observable: when --plain or NO_COLOR is active, the animated Spinner is
+// replaced with static text (e.g. "Checking…") and the ApplyProgress spinner
+// is replaced with "applying…". Those substitutions are testable because the
+// spinner writes unicode braille glyphs, not ANSI color codes.
+const SPINNER_CHARS = new Set(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']);
+const hasSpinnerGlyph = (text: string): boolean => [...text].some((ch) => SPINNER_CHARS.has(ch));
 
 // Helper: wait for any confirm screen (private shows "Proceed?"; public shows
 // the typed-confirm prompt). Match either so private tests remain unchanged.
@@ -394,6 +406,135 @@ describe('App', () => {
     expect(treeFetch).not.toHaveBeenCalled();
     expect(seen(frames, 'Checking')).toBe(false);
 
+    unmount();
+  });
+
+  // ── NO_COLOR / --plain accessible mode ──────────────────────────────────────
+  //
+  // Because vitest runs chalk.level=0, testing for "no ANSI codes" is vacuous.
+  // We test the meaningful behavioural difference instead:
+  //   - Scanning stage: spinner glyph (braille unicode) replaced with static text.
+  //   - ApplyProgress: "applying…" static text instead of the animated Spinner.
+  //   - Private flow still completes end-to-end (functional regression guard).
+
+  it('NO_COLOR env: private flow reaches confirm and completes (functional guard)', async () => {
+    const origNoColor = process.env['NO_COLOR'];
+    process.env['NO_COLOR'] = '1';
+    try {
+      const setter = vi.fn().mockResolvedValue(undefined);
+      const onComplete = vi.fn();
+      const loadRepos = vi.fn().mockResolvedValue([repo('pub-a', 'public')]);
+      const { stdin, lastFrame, unmount } = render(
+        <App flags={flags({ private: true })} loadRepos={loadRepos} setter={setter} onComplete={onComplete} />,
+      );
+
+      await waitFor(() => (lastFrame() ?? '').includes('pub-a'));
+      await delay(100);
+      stdin.write(KEY.space); // select pub-a
+      await waitFor(() => (lastFrame() ?? '').includes('1 selected'));
+      stdin.write(KEY.enter); // submit
+      await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+
+      await delay(100);
+      stdin.write('y');
+      await waitFor(() => onComplete.mock.calls.length > 0);
+      expect(onComplete).toHaveBeenCalledWith(0);
+      unmount();
+    } finally {
+      if (origNoColor === undefined) delete process.env['NO_COLOR'];
+      else process.env['NO_COLOR'] = origNoColor;
+    }
+  });
+
+  it('flags.plain: private flow reaches confirm and completes (functional guard)', async () => {
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockResolvedValue([repo('pub-a', 'public')]);
+    const { stdin, lastFrame, unmount } = render(
+      <App flags={flags({ private: true, plain: true })} loadRepos={loadRepos} setter={setter} onComplete={onComplete} />,
+    );
+
+    await waitFor(() => (lastFrame() ?? '').includes('pub-a'));
+    await delay(100);
+    stdin.write(KEY.space); // select pub-a
+    await waitFor(() => (lastFrame() ?? '').includes('1 selected'));
+    stdin.write(KEY.enter); // submit
+    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+
+    await delay(100);
+    stdin.write('y');
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    expect(onComplete).toHaveBeenCalledWith(0);
+    unmount();
+  });
+
+  it('flags.plain: scanning stage shows static "Checking…" text, NOT a spinner glyph', async () => {
+    // Meaningful test: spinner glyph (unicode braille) must NOT appear; static text MUST appear.
+    // This is observable even with chalk.level=0 because braille glyphs are unicode, not ANSI.
+    const treeFetch: TreeFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockResolvedValue([repo('priv-a', 'private')]);
+
+    const { stdin, lastFrame, frames, unmount } = render(
+      <App
+        flags={flags({ public: true, plain: true })}
+        loadRepos={loadRepos}
+        setter={setter}
+        onComplete={onComplete}
+        treeFetch={treeFetch}
+        protectPatterns={[]}
+      />,
+    );
+
+    await waitFor(() => (lastFrame() ?? '').includes('priv-a'));
+    await delay(100);
+    stdin.write(KEY.space); // select priv-a
+    await waitFor(() => (lastFrame() ?? '').includes('1 selected'));
+    stdin.write(KEY.enter); // submit → scanning stage
+
+    // --plain: scanning shows static text, not a spinner glyph.
+    await waitFor(() => seen(frames, 'Checking'));
+    // No spinner glyph should appear in ANY frame captured during --plain mode.
+    expect(frames.some((f) => hasSpinnerGlyph(f))).toBe(false);
+
+    // Flow still reaches confirm and completes.
+    await waitForConfirm(lastFrame, frames);
+    await delay(100);
+    await typePublic(stdin);
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    expect(setter).toHaveBeenCalledWith('me', 'priv-a', 'public');
+    unmount();
+  });
+
+  it('flags.plain: ApplyProgress shows "applying…" static text instead of spinner glyph', async () => {
+    // Meaningful test: when --plain, the ApplyProgress component must render static text
+    // for "applying" rows, not the animated Spinner (braille glyph).
+    const setter = vi.fn().mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    const onComplete = vi.fn();
+    const loadRepos = vi.fn().mockResolvedValue([repo('pub-a', 'public')]);
+
+    const { stdin, lastFrame, frames, unmount } = render(
+      <App flags={flags({ private: true, plain: true })} loadRepos={loadRepos} setter={setter} onComplete={onComplete} />,
+    );
+
+    await waitFor(() => (lastFrame() ?? '').includes('pub-a'));
+    await delay(100);
+    stdin.write(KEY.space);
+    await waitFor(() => (lastFrame() ?? '').includes('1 selected'));
+    stdin.write(KEY.enter);
+    await waitFor(() => (lastFrame() ?? '').includes('Proceed?'));
+    await delay(100);
+    stdin.write('y');
+
+    // Wait for the applying stage to render (the "applying…" text should appear).
+    await waitFor(() => seen(frames, 'applying…'));
+
+    // During --plain mode, NO spinner glyph should appear in any frame.
+    expect(frames.some((f) => hasSpinnerGlyph(f))).toBe(false);
+
+    await waitFor(() => onComplete.mock.calls.length > 0);
+    expect(onComplete).toHaveBeenCalledWith(0);
     unmount();
   });
 });

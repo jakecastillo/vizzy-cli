@@ -1,0 +1,30 @@
+name: Exposure audit
+
+# Run the exposure audit on a schedule and on pull requests that touch
+# security-sensitive paths.  Results are uploaded to GitHub Code Scanning.
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+  pull_request:
+    paths:
+      - '**.env*'
+      - '**/secrets/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  exposure-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run vizzy exposure audit
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          format: sarif

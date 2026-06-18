@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { assess } from './checks.js';
 import type { AssessOptions, RepoAssessment } from './checks.js';
+import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
+// historyHits is a string[] (filenames from history matching the sensitive classifier
+// but NOT present in HEAD). Each unique path → one secret-in-history danger finding.
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -15,6 +18,7 @@ function makeRepo(overrides: Partial<Repo> = {}): Repo {
     isFork: false,
     isArchived: false,
     stars: 0,
+    forksCount: 0,
     pushedAt: '2025-01-01T00:00:00Z',
     defaultBranch: 'main',
     license: 'MIT',
@@ -230,5 +234,114 @@ describe('repo pass-through', () => {
     const repo = makeRepo({ name: 'test-repo' });
     const r = assess(repo, [], OPTS);
     expect(r.repo).toBe(repo);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// secret-content finding (via contentHits)
+// ---------------------------------------------------------------------------
+
+describe('secret-content finding', () => {
+  it('emits one danger finding per ContentHit', () => {
+    const hits: ContentHit[] = [
+      { rule: 'aws-key', match: 'AK' + 'IAIOSFODNN7EXAMPLE1' },
+      { rule: 'github-token', match: 'gh' + 'p_abcdefghij1234567890ab' },
+    ];
+    const r = assess(makeRepo(), [], OPTS, hits);
+    const secretContent = r.findings.filter((f) => f.kind === 'secret-content');
+    expect(secretContent).toHaveLength(2);
+    expect(secretContent[0]!.severity).toBe('danger');
+    expect(secretContent[1]!.severity).toBe('danger');
+  });
+
+  it('secret-content finding label includes the rule name', () => {
+    const hits: ContentHit[] = [{ rule: 'stripe-key', match: 'sk_' + 'live_aaabbbcccdddeee12345678' }];
+    const r = assess(makeRepo(), [], OPTS, hits);
+    const f = r.findings.find((f) => f.kind === 'secret-content')!;
+    expect(f).toBeDefined();
+    expect(f.label).toContain('stripe-key');
+  });
+
+  it('severity is danger when contentHits are present', () => {
+    const hits: ContentHit[] = [{ rule: 'pem-private', match: '-----' + 'BEGIN PRIVATE KEY-----' }];
+    const r = assess(makeRepo(), [], OPTS, hits);
+    expect(r.severity).toBe('danger');
+    expect(r.requiredConfirm).toBe('name');
+  });
+
+  it('no contentHits → no secret-content findings', () => {
+    const r = assess(makeRepo(), [], OPTS, []);
+    expect(r.findings.filter((f) => f.kind === 'secret-content')).toHaveLength(0);
+  });
+
+  it('omitting contentHits → no secret-content findings', () => {
+    const r = assess(makeRepo(), [], OPTS);
+    expect(r.findings.filter((f) => f.kind === 'secret-content')).toHaveLength(0);
+  });
+
+  it('contentHits + secret-file both produce danger findings', () => {
+    const hits: ContentHit[] = [{ rule: 'aws-key', match: 'AK' + 'IAIOSFODNN7EXAMPLE1' }];
+    const r = assess(makeRepo(), ['.env'], OPTS, hits);
+    const kinds = r.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-file');
+    expect(kinds).toContain('secret-content');
+    expect(r.severity).toBe('danger');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// secret-in-history finding (via historyHits)
+// ---------------------------------------------------------------------------
+
+describe('secret-in-history finding', () => {
+  it('deleted .env in history → one danger finding', () => {
+    // historyHits are filenames from history that match the sensitive classifier
+    // but are NOT present in the current HEAD tree. They should produce exactly
+    // one secret-in-history danger finding.
+    const r = assess(makeRepo(), [], OPTS, undefined, ['.env']);
+    const f = r.findings.find((x) => x.kind === 'secret-in-history');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('danger');
+    expect(f!.detail).toContain('.env');
+  });
+
+  it('severity is danger when secret-in-history found', () => {
+    const r = assess(makeRepo(), [], OPTS, undefined, ['.env']);
+    expect(r.severity).toBe('danger');
+    expect(r.requiredConfirm).toBe('name');
+  });
+
+  it('a file present in HEAD is NOT double-flagged as history — only secret-file fires', () => {
+    // .env is in current HEAD paths AND in historyHits. Only secret-file should fire,
+    // NOT secret-in-history (no double-counting).
+    const r = assess(makeRepo(), ['.env'], OPTS, undefined, ['.env']);
+    const kinds = r.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-file');
+    expect(kinds).not.toContain('secret-in-history');
+  });
+
+  it('emits one finding per unique history-only sensitive file', () => {
+    const r = assess(makeRepo(), [], OPTS, undefined, ['old_secret.key', 'config/db.pem']);
+    const histFindings = r.findings.filter((f) => f.kind === 'secret-in-history');
+    expect(histFindings).toHaveLength(2);
+  });
+
+  it('empty historyHits → no secret-in-history findings', () => {
+    const r = assess(makeRepo(), [], OPTS, undefined, []);
+    expect(r.findings.filter((f) => f.kind === 'secret-in-history')).toHaveLength(0);
+  });
+
+  it('omitting historyHits → no secret-in-history findings', () => {
+    const r = assess(makeRepo(), [], OPTS);
+    expect(r.findings.filter((f) => f.kind === 'secret-in-history')).toHaveLength(0);
+  });
+
+  it('contentHits + historyHits together both produce danger findings', () => {
+    const hits: ContentHit[] = [{ rule: 'aws-key', match: 'AK' + 'IAIOSFODNN7EXAMPLE1' }];
+    const r = assess(makeRepo(), [], OPTS, hits, ['deleted.pem']);
+    const kinds = r.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-content');
+    expect(kinds).toContain('secret-in-history');
+    expect(r.severity).toBe('danger');
   });
 });

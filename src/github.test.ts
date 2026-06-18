@@ -3,10 +3,13 @@ import { RequestError } from '@octokit/request-error';
 import {
   normalizeRepo,
   listOwnerRepos,
+  listOrgRepos,
   listRepoTree,
   setVisibility,
   explainError,
   makeSetter,
+  getBlobText,
+  listHistoryFilenames,
   type RawRepo,
 } from './github.js';
 
@@ -17,6 +20,7 @@ const raw = (over: Partial<RawRepo> = {}): RawRepo => ({
   fork: false,
   archived: false,
   stargazers_count: 3,
+  forks_count: 0,
   pushed_at: '2024-01-01T00:00:00Z',
   default_branch: 'main',
   license: { spdx_id: 'MIT' },
@@ -192,5 +196,178 @@ describe('listRepoTree', () => {
       tree_sha: 'develop',
       recursive: '1',
     });
+  });
+});
+
+describe('getBlobText', () => {
+  it('base64-decodes blob content and returns a string', async () => {
+    const content = 'hello world\n';
+    const encoded = Buffer.from(content).toString('base64');
+    const getBlob = vi.fn().mockResolvedValue({ data: { content: encoded, encoding: 'base64' } });
+    const octokit = { rest: { git: { getBlob } } };
+    const result = await getBlobText(octokit as never, 'me', 'r', 'abc123sha');
+    expect(result).toBe(content);
+    expect(getBlob).toHaveBeenCalledWith({ owner: 'me', repo: 'r', file_sha: 'abc123sha' });
+  });
+
+  it('handles content with newlines in base64 (GitHub API wraps at 60 chars)', async () => {
+    const content = 'AKIAIOSFODNN7EXAMPLE1234\n';
+    const encoded = Buffer.from(content).toString('base64');
+    // GitHub API wraps base64 at 60 chars with \n
+    const wrapped = encoded.match(/.{1,60}/g)!.join('\n');
+    const getBlob = vi.fn().mockResolvedValue({ data: { content: wrapped, encoding: 'base64' } });
+    const octokit = { rest: { git: { getBlob } } };
+    const result = await getBlobText(octokit as never, 'me', 'r', 'sha99');
+    expect(result).toBe(content);
+  });
+
+  it('propagates errors (→ scan-incomplete upstream)', async () => {
+    const getBlob = vi.fn().mockRejectedValue(new Error('blob not found'));
+    const octokit = { rest: { git: { getBlob } } };
+    await expect(getBlobText(octokit as never, 'me', 'r', 'badsha')).rejects.toThrow('blob not found');
+  });
+});
+
+describe('listHistoryFilenames', () => {
+  // The real API is two-step: listCommits returns commit SUMMARIES (sha only,
+  // NO files), then getCommit(ref=sha) returns that commit's files. This mock
+  // mirrors that contract so a regression to "read files off listCommits" fails.
+  function makeOctokit(commitFiles: Array<string[] | undefined>) {
+    const shas = commitFiles.map((_, i) => `sha${i}`);
+    const listCommits = vi.fn().mockResolvedValue({ data: shas.map((sha) => ({ sha })) });
+    const getCommit = vi.fn().mockImplementation(({ ref }: { ref: string }) => {
+      const idx = shas.indexOf(ref);
+      const names = commitFiles[idx];
+      const files = names === undefined ? undefined : names.map((filename) => ({ filename }));
+      return Promise.resolve({ data: { files } });
+    });
+    return { octokit: { rest: { repos: { listCommits, getCommit } } }, listCommits, getCommit };
+  }
+
+  it('fetches each commit (getCommit per sha) and returns unique filenames', async () => {
+    const { octokit, getCommit } = makeOctokit([
+      ['.env', 'src/index.ts'],
+      ['README.md', 'src/index.ts'],
+    ]);
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toContain('.env');
+    expect(result.paths).toContain('src/index.ts');
+    expect(result.paths).toContain('README.md');
+    // Deduped — src/index.ts appears only once
+    expect(result.paths.filter((p) => p === 'src/index.ts')).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+    // The two-step contract: getCommit is actually called per commit (the bug
+    // this guards was reading `files` off listCommits, which never has them).
+    expect(getCommit).toHaveBeenCalledTimes(2);
+  });
+
+  it('sets truncated=true when returned commits equals maxCommits', async () => {
+    const { octokit } = makeOctokit([['a.txt'], ['b.txt'], ['c.txt']]);
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r', 3);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('handles a commit with no files array gracefully', async () => {
+    const { octokit } = makeOctokit([undefined, ['config.env']]);
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toContain('config.env');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('defaults maxCommits to 100', async () => {
+    const { octokit, listCommits } = makeOctokit([]);
+    await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(listCommits).toHaveBeenCalledWith(expect.objectContaining({ per_page: 100 }));
+  });
+
+  it('returns empty paths and truncated=false for a repo with no commits', async () => {
+    const { octokit, getCommit } = makeOctokit([]);
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toEqual([]);
+    expect(result.truncated).toBe(false);
+    expect(getCommit).not.toHaveBeenCalled();
+  });
+
+  it('propagates a listCommits error so it becomes scan-incomplete upstream', async () => {
+    const listCommits = vi.fn().mockRejectedValue(new Error('network error'));
+    const octokit = { rest: { repos: { listCommits } } };
+    await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('network error');
+  });
+
+  it('propagates a getCommit error so it becomes scan-incomplete upstream', async () => {
+    const listCommits = vi.fn().mockResolvedValue({ data: [{ sha: 'abc' }] });
+    const getCommit = vi.fn().mockRejectedValue(new Error('commit fetch failed'));
+    const octokit = { rest: { repos: { listCommits, getCommit } } };
+    await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('commit fetch failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listOrgRepos (bead vizzy-cli-9cm.10)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// setArchived (bead vizzy-cli-9cm.12)
+// ---------------------------------------------------------------------------
+
+describe('setArchived', () => {
+  it('calls repos.update with archived:true to archive a repo', async () => {
+    const update = vi.fn().mockResolvedValue({ data: {} });
+    const octokit = { rest: { repos: { update } } };
+    // Import setArchived from this module
+    const { setArchived } = await import('./github.js');
+    await setArchived(octokit as never, 'me', 'r', true);
+    expect(update).toHaveBeenCalledWith({ owner: 'me', repo: 'r', archived: true });
+  });
+
+  it('calls repos.update with archived:false to unarchive a repo', async () => {
+    const update = vi.fn().mockResolvedValue({ data: {} });
+    const octokit = { rest: { repos: { update } } };
+    const { setArchived } = await import('./github.js');
+    await setArchived(octokit as never, 'me', 'r', false);
+    expect(update).toHaveBeenCalledWith({ owner: 'me', repo: 'r', archived: false });
+  });
+});
+
+describe('listOrgRepos', () => {
+  it('paginates org repos via GET /orgs/{org}/repos and normalizes them', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'infra', private: false }),
+      raw({ name: 'backend', private: true }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos.map((r) => r.name)).toEqual(['infra', 'backend']);
+    expect(paginate).toHaveBeenCalledWith(
+      octokit.rest.repos.listForOrg,
+      { org: 'acme', type: 'all', per_page: 100 },
+    );
+  });
+
+  it('normalizes visibility from private flag', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'pub', private: false }),
+      raw({ name: 'priv', private: true }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos.find((r) => r.name === 'pub')!.visibility).toBe('public');
+    expect(repos.find((r) => r.name === 'priv')!.visibility).toBe('private');
+  });
+
+  it('returns an empty array when the org has no repos', async () => {
+    const paginate = vi.fn().mockResolvedValue([]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'empty-org');
+    expect(repos).toEqual([]);
+  });
+
+  it('normalizes owner to the org name (raw owner.login)', async () => {
+    const paginate = vi.fn().mockResolvedValue([
+      raw({ name: 'repo-x', owner: { login: 'acme' } }),
+    ]);
+    const octokit = { paginate, rest: { repos: { listForOrg: {} } } };
+    const repos = await listOrgRepos(octokit as never, 'acme');
+    expect(repos[0].owner).toBe('acme');
   });
 });

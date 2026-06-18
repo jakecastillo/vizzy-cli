@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Repo, Visibility } from '../types.js';
+import { useColor } from './theme.js';
 
 export function RepoList({
   repos,
@@ -13,6 +14,7 @@ export function RepoList({
   onSubmit: (selected: Repo[]) => void;
   limit?: number;
 }): JSX.Element {
+  const color = useColor();
   const [cursor, setCursor] = useState(0);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [offset, setOffset] = useState(0);
@@ -65,9 +67,9 @@ export function RepoList({
         const isChecked = checked.has(index);
         return (
           <Box key={repo.name}>
-            <Text color={isCursor ? 'cyan' : undefined}>{isCursor ? '❯ ' : '  '}</Text>
-            <Text color={isChecked ? 'green' : undefined}>{isChecked ? '◉ ' : '◯ '}</Text>
-            <Text color={isCursor ? 'cyan' : undefined}>{repo.name.padEnd(nameWidth)}</Text>
+            <Text color={isCursor ? color('cyan') : undefined}>{isCursor ? '❯ ' : '  '}</Text>
+            <Text color={isChecked ? color('green') : undefined}>{isChecked ? '◉ ' : '◯ '}</Text>
+            <Text color={isCursor ? color('cyan') : undefined}>{repo.name.padEnd(nameWidth)}</Text>
             <Text dimColor>{`   ${repo.visibility}   ★ ${repo.stars}`}</Text>
           </Box>
         );
