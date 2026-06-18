@@ -141,6 +141,43 @@ changes. Good first issues are labeled
 This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating,
 you agree to uphold it.
 
+## Trust & safety
+
+**License.** vizzy-cli is [MIT licensed](LICENSE). Use it, fork it, ship it.
+
+**Token handling.** Your GitHub token is read from the `gh` CLI (`gh auth token`)
+or the `GH_TOKEN` / `GITHUB_TOKEN` environment variables. It is passed directly to
+the Octokit client and is never logged, written to disk, or included in any
+output. You can verify this in [`src/auth.ts`](src/auth.ts) and
+[`src/github.ts`](src/github.ts).
+
+**No telemetry.** vizzy makes no analytics or telemetry calls. The only network
+traffic is to `api.github.com` via the official Octokit REST client.
+
+**Safe-by-default flags.**
+- `--dry-run` previews every change without touching GitHub — nothing is applied.
+- `--audit` and `--check` are fully read-only; they fetch repo metadata and file
+  trees but never mutate anything.
+
+### Least-privilege PAT
+
+**Already using the `gh` CLI?** Run `gh auth login` once and you are done —
+vizzy reuses the token the `gh` CLI already holds. No PAT needed.
+
+If you prefer a dedicated PAT, use a **fine-grained personal access token** scoped
+to only the repositories you want to manage:
+
+| Permission | Level |
+|---|---|
+| **Administration** | Read and write |
+
+That is the only permission required. Scoping it to selected repositories limits
+the blast radius further.
+
+_Contrast with the classic `repo` scope_, which grants broad read/write access to
+**all** of your repositories (code, issues, PRs, secrets). The fine-grained path
+is strictly narrower.
+
 ## Security
 
 Found a vulnerability? Please report it privately — see
