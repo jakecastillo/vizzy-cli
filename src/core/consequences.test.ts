@@ -64,10 +64,10 @@ describe('consequencesFor — going private', () => {
 });
 
 describe('consequencesFor — going public', () => {
-  it('returns publishes Actions run logs', () => {
+  it('returns publishes Actions logs', () => {
     const r = repo();
     const result = consequencesFor(r, 'public');
-    expect(result).toContain('publishes Actions run logs');
+    expect(result).toContain('publishes Actions logs');
   });
 
   it('returns disables push rulesets', () => {

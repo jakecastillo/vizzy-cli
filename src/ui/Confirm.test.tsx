@@ -439,14 +439,14 @@ describe('Confirm — consequences rendering', () => {
     unmount();
   });
 
-  it('public confirm: shows publishes Actions run logs', () => {
+  it('public confirm: shows publishes Actions logs', () => {
     const r = cleanRepo('my-repo');
     const plan = buildPlan('public', [r]);
     const assessments = [cleanAssessment(r)];
     const { lastFrame, unmount } = render(
       <Confirm plan={plan} assessments={assessments} onConfirm={() => {}} />,
     );
-    expect(lastFrame()).toContain('publishes Actions run logs');
+    expect(lastFrame()).toContain('publishes Actions logs');
     unmount();
   });
 

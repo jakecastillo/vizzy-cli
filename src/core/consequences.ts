@@ -12,7 +12,7 @@
  *     - 'unpublishes GitHub Pages' (always)
  *
  *   Going PUBLIC:
- *     - 'publishes Actions run logs'
+ *     - 'publishes Actions logs'
  *     - 'disables push rulesets'
  */
 
@@ -37,5 +37,5 @@ export function consequencesFor(repo: Repo, target: Target): string[] {
   }
 
   // Going public
-  return ['publishes Actions run logs', 'disables push rulesets'];
+  return ['publishes Actions logs', 'disables push rulesets'];
 }
