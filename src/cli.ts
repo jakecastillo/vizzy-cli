@@ -59,6 +59,11 @@ export interface CliFlags {
   yes?: boolean;
   /** Allow applying even danger repos (bypass safety guard). */
   allowDanger?: boolean;
+  /**
+   * Pre-publish readiness check for one repo.
+   * Value is "owner/repo" (explicit) or true (infer from cwd git remote).
+   */
+  check?: string | boolean;
 }
 
 export function parseArgs(
@@ -105,7 +110,11 @@ export function parseArgs(
     )
     .option('--all-eligible', 'select all eligible repos (headless mode)')
     .option('--yes', 'apply caution-level repos without confirmation (headless mode)')
-    .option('--allow-danger', 'apply even danger repos without confirmation (headless mode)');
+    .option('--allow-danger', 'apply even danger repos without confirmation (headless mode)')
+    .option(
+      '--check [repo]',
+      'pre-publish readiness check for one repo (owner/repo, or infer from cwd git remote)',
+    );
 
   if (opts.exitOverride) program.exitOverride();
 

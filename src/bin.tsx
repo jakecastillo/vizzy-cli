@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { render } from 'ink';
 import { parseArgs } from './cli.js';
 import { getToken } from './auth.js';
-import { makeOctokit, listOwnerRepos, makeSetter, listRepoTree } from './github.js';
+import { makeOctokit, listOwnerRepos, makeSetter, listRepoTree, getBlobText, listHistoryFilenames, normalizeRepo } from './github.js';
 import { loadProtected } from './core/protected.js';
 import { loadScanRules } from './core/scanrules.js';
 import { App } from './ui/App.js';
 import { runAudit } from './audit.js';
 import { runHeadless } from './headless.js';
+import { runCheck } from './check.js';
 
 const flags = parseArgs();
 
@@ -40,6 +42,98 @@ if (flags.audit) {
       format: flags.format,
     },
   );
+  process.exit(code);
+}
+
+// ── vizzy check: pre-publish readiness for one repo ─────────────────────────
+if (flags.check !== undefined && flags.check !== false) {
+  // Resolve the repo ref: explicit "owner/repo" arg or infer from cwd git remote.
+  let repoRef: string;
+  if (typeof flags.check === 'string') {
+    repoRef = flags.check;
+  } else {
+    // Infer from git remote get-url origin
+    try {
+      const remote = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
+      // Parse SSH (git@github.com:owner/repo.git) or HTTPS (https://github.com/owner/repo.git)
+      const sshMatch = remote.match(/git@[^:]+:([^/]+\/[^.]+)(\.git)?$/);
+      const httpsMatch = remote.match(/https?:\/\/[^/]+\/([^/]+\/[^/.]+)(\.git)?$/);
+      const matched = sshMatch ?? httpsMatch;
+      if (!matched || !matched[1]) {
+        process.stderr.write(
+          `vizzy check: could not parse owner/repo from git remote "${remote}".\n` +
+            'Pass an explicit "owner/repo" argument: vizzy --check owner/repo\n',
+        );
+        process.exit(3);
+      }
+      repoRef = matched[1];
+    } catch {
+      process.stderr.write(
+        'vizzy check: could not read git remote origin from cwd.\n' +
+          'Run from a git repository or pass an explicit "owner/repo" argument.\n',
+      );
+      process.exit(3);
+    }
+  }
+
+  let token: string;
+  try {
+    token = await getToken();
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(3);
+  }
+
+  const octokit = makeOctokit(token);
+
+  // Read .vizzyscan from cwd
+  let scanRulesText = '';
+  try {
+    scanRulesText = readFileSync(join(process.cwd(), '.vizzyscan'), 'utf8');
+  } catch {
+    // Missing — treat as empty
+  }
+
+  const code = await runCheck(repoRef, {
+    loadRepo: async (o, n) => {
+      const { data } = await octokit.rest.repos.get({ owner: o, repo: n });
+      return normalizeRepo(data as Parameters<typeof normalizeRepo>[0]);
+    },
+    treeFetch: async (repo) => {
+      // Fetch tree with blob sizes directly — runCheck needs { items, truncated }.
+      const { data } = await octokit.rest.git.getTree({
+        owner: repo.owner,
+        repo: repo.name,
+        tree_sha: repo.defaultBranch,
+        recursive: '1',
+      });
+      const items = data.tree
+        .filter((item) => item.type === 'blob')
+        .map((item) => ({ path: item.path ?? '', size: item.size }));
+      return { items, truncated: data.truncated ?? false };
+    },
+    contentFetcher: async (repo, path) => {
+      // Need the blob SHA — look it up from the tree
+      const { data } = await octokit.rest.git.getTree({
+        owner: repo.owner,
+        repo: repo.name,
+        tree_sha: repo.defaultBranch,
+        recursive: '1',
+      });
+      const blob = data.tree.find((i) => i.path === path && i.type === 'blob');
+      if (!blob?.sha) throw new Error(`Blob SHA not found for ${path}`);
+      return getBlobText(octokit, repo.owner, repo.name, blob.sha);
+    },
+    historyFetcher: async (repo) => listHistoryFilenames(octokit, repo.owner, repo.name),
+    scanRulesText,
+  }, {
+    assessOpts: {
+      staleMonths: 12,
+      highProfileStars: 10,
+      now: new Date(),
+    },
+  });
+
   process.exit(code);
 }
 
