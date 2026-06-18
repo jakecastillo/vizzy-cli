@@ -227,18 +227,26 @@ describe('getBlobText', () => {
 });
 
 describe('listHistoryFilenames', () => {
-  function makeCommit(files: string[]) {
-    return { files: files.map((filename) => ({ filename })) };
+  // The real API is two-step: listCommits returns commit SUMMARIES (sha only,
+  // NO files), then getCommit(ref=sha) returns that commit's files. This mock
+  // mirrors that contract so a regression to "read files off listCommits" fails.
+  function makeOctokit(commitFiles: Array<string[] | undefined>) {
+    const shas = commitFiles.map((_, i) => `sha${i}`);
+    const listCommits = vi.fn().mockResolvedValue({ data: shas.map((sha) => ({ sha })) });
+    const getCommit = vi.fn().mockImplementation(({ ref }: { ref: string }) => {
+      const idx = shas.indexOf(ref);
+      const names = commitFiles[idx];
+      const files = names === undefined ? undefined : names.map((filename) => ({ filename }));
+      return Promise.resolve({ data: { files } });
+    });
+    return { octokit: { rest: { repos: { listCommits, getCommit } } }, listCommits, getCommit };
   }
 
-  it('returns all unique filenames from commits and truncated=false when under maxCommits', async () => {
-    const listCommits = vi.fn().mockResolvedValue({
-      data: [
-        makeCommit(['.env', 'src/index.ts']),
-        makeCommit(['README.md', 'src/index.ts']),
-      ],
-    });
-    const octokit = { rest: { repos: { listCommits } } };
+  it('fetches each commit (getCommit per sha) and returns unique filenames', async () => {
+    const { octokit, getCommit } = makeOctokit([
+      ['.env', 'src/index.ts'],
+      ['README.md', 'src/index.ts'],
+    ]);
     const result = await listHistoryFilenames(octokit as never, 'me', 'r');
     expect(result.paths).toContain('.env');
     expect(result.paths).toContain('src/index.ts');
@@ -246,55 +254,48 @@ describe('listHistoryFilenames', () => {
     // Deduped — src/index.ts appears only once
     expect(result.paths.filter((p) => p === 'src/index.ts')).toHaveLength(1);
     expect(result.truncated).toBe(false);
+    // The two-step contract: getCommit is actually called per commit (the bug
+    // this guards was reading `files` off listCommits, which never has them).
+    expect(getCommit).toHaveBeenCalledTimes(2);
   });
 
   it('sets truncated=true when returned commits equals maxCommits', async () => {
-    // 3 commits returned, maxCommits=3 → truncated
-    const listCommits = vi.fn().mockResolvedValue({
-      data: [
-        makeCommit(['a.txt']),
-        makeCommit(['b.txt']),
-        makeCommit(['c.txt']),
-      ],
-    });
-    const octokit = { rest: { repos: { listCommits } } };
+    const { octokit } = makeOctokit([['a.txt'], ['b.txt'], ['c.txt']]);
     const result = await listHistoryFilenames(octokit as never, 'me', 'r', 3);
     expect(result.truncated).toBe(true);
   });
 
-  it('handles commits with no files array gracefully', async () => {
-    const listCommits = vi.fn().mockResolvedValue({
-      data: [
-        { files: undefined },
-        makeCommit(['config.env']),
-      ],
-    });
-    const octokit = { rest: { repos: { listCommits } } };
+  it('handles a commit with no files array gracefully', async () => {
+    const { octokit } = makeOctokit([undefined, ['config.env']]);
     const result = await listHistoryFilenames(octokit as never, 'me', 'r');
     expect(result.paths).toContain('config.env');
     expect(result.truncated).toBe(false);
   });
 
   it('defaults maxCommits to 100', async () => {
-    const listCommits = vi.fn().mockResolvedValue({ data: [] });
-    const octokit = { rest: { repos: { listCommits } } };
+    const { octokit, listCommits } = makeOctokit([]);
     await listHistoryFilenames(octokit as never, 'me', 'r');
-    expect(listCommits).toHaveBeenCalledWith(
-      expect.objectContaining({ per_page: 100 }),
-    );
+    expect(listCommits).toHaveBeenCalledWith(expect.objectContaining({ per_page: 100 }));
   });
 
   it('returns empty paths and truncated=false for a repo with no commits', async () => {
-    const listCommits = vi.fn().mockResolvedValue({ data: [] });
-    const octokit = { rest: { repos: { listCommits } } };
+    const { octokit, getCommit } = makeOctokit([]);
     const result = await listHistoryFilenames(octokit as never, 'me', 'r');
     expect(result.paths).toEqual([]);
     expect(result.truncated).toBe(false);
+    expect(getCommit).not.toHaveBeenCalled();
   });
 
-  it('propagates errors so they become scan-incomplete upstream', async () => {
+  it('propagates a listCommits error so it becomes scan-incomplete upstream', async () => {
     const listCommits = vi.fn().mockRejectedValue(new Error('network error'));
     const octokit = { rest: { repos: { listCommits } } };
     await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('network error');
+  });
+
+  it('propagates a getCommit error so it becomes scan-incomplete upstream', async () => {
+    const listCommits = vi.fn().mockResolvedValue({ data: [{ sha: 'abc' }] });
+    const getCommit = vi.fn().mockRejectedValue(new Error('commit fetch failed'));
+    const octokit = { rest: { repos: { listCommits, getCommit } } };
+    await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('commit fetch failed');
   });
 });

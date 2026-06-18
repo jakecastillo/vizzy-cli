@@ -46,6 +46,10 @@ npm i -g vizzy-cli && vizzy
 | `--force-public` | Skip per-repo name confirmation for danger repos when going public |
 | `--no-protect` | Ignore `.vizzyignore` protected-repos list |
 | `--audit` | Non-interactive audit: report public-repo exposure risk and exit (conflicts with `--dry-run`) |
+| `--format <text\|json\|sarif>` | Output format for `--audit` (default `text`); `sarif` is GitHub-code-scanning compatible |
+| `--json` | Shorthand for `--format json` |
+
+**Exit codes:** `0` ok/clean · `1` a danger finding or an apply failure · `2` usage error · `3` auth/network error. `--audit` honors this contract, so it slots into CI.
 | `-h, --help` / `-v, --version` | Standard |
 
 ## How it works

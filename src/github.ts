@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import pLimit from 'p-limit';
 import type { Repo, Visibility, VisibilitySetter } from './types.js';
 
 export function makeOctokit(token: string): Octokit {
@@ -193,22 +194,32 @@ export async function listHistoryFilenames(
   repo: string,
   maxCommits = 100,
 ): Promise<{ paths: string[]; truncated: boolean }> {
+  // listCommits returns commit SUMMARIES with no `files` field — the changed
+  // files live only on the single-commit endpoint. So we fetch each commit
+  // (bounded by maxCommits) via getCommit, with bounded concurrency.
   const { data: commits } = await octokit.rest.repos.listCommits({
     owner,
     repo,
     per_page: maxCommits,
   });
 
-  const seen = new Set<string>();
-  for (const commit of commits) {
-    const files = (commit as { files?: Array<{ filename: string }> }).files;
-    if (Array.isArray(files)) {
-      for (const f of files) {
-        seen.add(f.filename);
-      }
-    }
-  }
+  const limit = pLimit(5);
+  const perCommit = await Promise.all(
+    commits.map((c) =>
+      limit(async () => {
+        const { data: full } = await octokit.rest.repos.getCommit({
+          owner,
+          repo,
+          ref: c.sha,
+        });
+        return (full.files ?? [])
+          .map((f) => f.filename)
+          .filter((n): n is string => typeof n === 'string');
+      }),
+    ),
+  );
 
+  const seen = new Set<string>(perCommit.flat());
   return {
     paths: [...seen],
     truncated: commits.length >= maxCommits,
