@@ -30,6 +30,7 @@ function makeRepo(overrides: Partial<Repo> = {}): Repo {
     isFork: false,
     isArchived: false,
     stars: 0,
+    forksCount: 0,
     pushedAt: '2026-05-01T00:00:00Z',
     defaultBranch: 'main',
     license: 'MIT',

@@ -14,6 +14,7 @@ export interface RawRepo {
   fork: boolean;
   archived: boolean;
   stargazers_count: number;
+  forks_count: number;
   pushed_at: string | null;
   default_branch: string;
   license: { spdx_id: string | null } | null;
@@ -27,6 +28,7 @@ export function normalizeRepo(raw: RawRepo): Repo {
     isFork: raw.fork,
     isArchived: raw.archived,
     stars: raw.stargazers_count,
+    forksCount: raw.forks_count,
     pushedAt: raw.pushed_at ?? '1970-01-01T00:00:00Z',
     defaultBranch: raw.default_branch ?? 'HEAD',
     license: raw.license?.spdx_id ?? null,

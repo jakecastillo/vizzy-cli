@@ -9,6 +9,7 @@ export interface Repo {
   isFork: boolean;
   isArchived: boolean;
   stars: number;
+  forksCount: number;
   pushedAt: string; // ISO 8601
   defaultBranch: string;
   license: string | null; // SPDX identifier or null

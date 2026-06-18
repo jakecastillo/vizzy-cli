@@ -11,6 +11,7 @@ const repo = (name: string): Repo => ({
   isFork: false,
   isArchived: false,
   stars: 1,
+  forksCount: 0,
   pushedAt: '2024-01-01T00:00:00Z',
   defaultBranch: 'main',
   license: null,

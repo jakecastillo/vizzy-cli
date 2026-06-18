@@ -20,6 +20,7 @@ const raw = (over: Partial<RawRepo> = {}): RawRepo => ({
   fork: false,
   archived: false,
   stargazers_count: 3,
+  forks_count: 0,
   pushed_at: '2024-01-01T00:00:00Z',
   default_branch: 'main',
   license: { spdx_id: 'MIT' },
