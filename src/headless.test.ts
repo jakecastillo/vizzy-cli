@@ -446,3 +446,79 @@ describe('runHeadless — missing selection', () => {
     expect(setter).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — guard wiring (final-review fixes): .vizzyignore + .vizzyscan + fail-safe
+// ---------------------------------------------------------------------------
+
+describe('runHeadless — guards (.vizzyignore / .vizzyscan / fail-safe)', () => {
+  it('drops a .vizzyignore-protected repo from a public switch (never applied), exit 0', async () => {
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const deps: HeadlessDeps = {
+      loadRepos: async () => [makeRepo({ name: 'secret-repo', visibility: 'private' })],
+      setter,
+      treeFetch: async () => ({ paths: [], truncated: false }),
+    };
+    const flags: HeadlessFlags = { target: 'public', repos: ['secret-repo'], yes: true, protect: true };
+    const opts: HeadlessOpts = { ...BASE_OPTS, protectPatterns: ['secret-repo'] };
+    let code!: number;
+    const out = await captureStdout(async () => {
+      code = await runHeadless(deps, flags, opts);
+    });
+    expect(setter).not.toHaveBeenCalled(); // protected repo is never exposed
+    expect(out.toLowerCase()).toContain('protected');
+    expect(code).toBe(0); // a protected skip is intentional, not a failure
+  });
+
+  it('--no-protect lets a protected repo through (protect:false)', async () => {
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const deps: HeadlessDeps = {
+      loadRepos: async () => [makeRepo({ name: 'secret-repo', visibility: 'private' })],
+      setter,
+      treeFetch: async () => ({ paths: [], truncated: false }),
+    };
+    const flags: HeadlessFlags = { target: 'public', repos: ['secret-repo'], yes: true, protect: false };
+    const opts: HeadlessOpts = { ...BASE_OPTS, protectPatterns: ['secret-repo'] };
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runHeadless(deps, flags, opts);
+    });
+    expect(setter).toHaveBeenCalledWith('octocat', 'secret-repo', 'public');
+    expect(code).toBe(0);
+  });
+
+  it('applies custom .vizzyscan deny rules (a custom-danger file is skipped), exit 1', async () => {
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const deps: HeadlessDeps = {
+      loadRepos: async () => [makeRepo({ name: 'app', visibility: 'private' })],
+      setter,
+      treeFetch: async () => ({ paths: ['config/app.myco-secret'], truncated: false }),
+    };
+    const flags: HeadlessFlags = { target: 'public', allEligible: true };
+    const opts: HeadlessOpts = { ...BASE_OPTS, scanRules: { deny: ['*.myco-secret'], allow: [] } };
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runHeadless(deps, flags, opts);
+    });
+    expect(setter).not.toHaveBeenCalled(); // custom-deny → danger → skipped (no --allow-danger)
+    expect(code).toBe(1);
+  });
+
+  it('fail-safe: a treeFetch rejection degrades to scan-incomplete (caution), NOT applied without --yes', async () => {
+    const setter = vi.fn().mockResolvedValue(undefined);
+    const deps: HeadlessDeps = {
+      loadRepos: async () => [makeRepo({ name: 'r', visibility: 'private' })],
+      setter,
+      treeFetch: async () => {
+        throw new Error('network');
+      },
+    };
+    const flags: HeadlessFlags = { target: 'public', allEligible: true }; // no --yes
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runHeadless(deps, flags, BASE_OPTS);
+    });
+    expect(setter).not.toHaveBeenCalled(); // a failed scan never silently applies
+    expect(code).toBe(0); // caution skipped (not danger) → no failure
+  });
+});

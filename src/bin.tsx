@@ -17,6 +17,23 @@ import { setArchived } from './github.js';
 
 const flags = parseArgs();
 
+/** Read the cwd guard files (.vizzyignore protected list + .vizzyscan rules). Missing → empty. */
+function readGuards(): { protectPatterns: string[]; scanRules: ReturnType<typeof loadScanRules> } {
+  let protectPatterns: string[] = [];
+  try {
+    protectPatterns = loadProtected(readFileSync(join(process.cwd(), '.vizzyignore'), 'utf8'));
+  } catch {
+    /* missing/unreadable → no protected repos */
+  }
+  let scanRulesText = '';
+  try {
+    scanRulesText = readFileSync(join(process.cwd(), '.vizzyscan'), 'utf8');
+  } catch {
+    /* missing/unreadable → empty rules */
+  }
+  return { protectPatterns, scanRules: loadScanRules(scanRulesText) };
+}
+
 // --audit: non-interactive mode — run before TTY check and Ink render.
 // Exit-code contract: 0 ok/clean · 1 danger or apply-failure · 2 usage error · 3 auth/network error
 if (flags.audit) {
@@ -58,6 +75,8 @@ if (flags.audit) {
         now: new Date(),
       },
       format: flags.format,
+      // Custom .vizzyscan rules apply to the audit scan too (not just --check / TUI).
+      scanRules: readGuards().scanRules,
       // Drift: read/write .vizzy/state.json so --fail-on-new compares against it.
       failOnNew: flags.failOnNew,
       snapshotPath: join(process.cwd(), '.vizzy', 'state.json'),
@@ -199,9 +218,11 @@ if (flags.archive || flags.unarchive) {
   process.exit(code);
 }
 
-// ── Headless apply: route non-interactive (--repos / --all-eligible / --yes) to runHeadless
+// ── Headless apply: route non-interactive (--repos / --all-eligible) to runHeadless
 // BEFORE the TTY check so that CI/scripts get a proper exit code and clean output.
-const isHeadless = !!(flags.yes || (flags.repos && flags.repos.length > 0) || flags.allEligible);
+// --yes is a MODIFIER (apply caution without confirm), NOT a trigger on its own —
+// requiring a selection avoids `vizzy --private --yes` falling into a useless headless run.
+const isHeadless = !!((flags.repos && flags.repos.length > 0) || flags.allEligible);
 
 if (isHeadless) {
   // Resolve target: --public or --private. Default to 'private' when neither given.
@@ -216,6 +237,7 @@ if (isHeadless) {
   }
 
   const octokit = makeOctokit(token);
+  const { protectPatterns, scanRules } = readGuards();
 
   const code = await runHeadless(
     {
@@ -233,6 +255,7 @@ if (isHeadless) {
       json: flags.format === 'json',
       forks: flags.forks,
       includeArchived: flags.includeArchived,
+      protect: flags.protect,
     },
     {
       assessOpts: {
@@ -240,6 +263,9 @@ if (isHeadless) {
         highProfileStars: 10,
         now: new Date(),
       },
+      // .vizzyignore-protected repos must not go public headlessly; .vizzyscan rules apply.
+      protectPatterns,
+      scanRules,
     },
   );
   process.exit(code);
@@ -269,28 +295,11 @@ try {
   token = await getToken();
 } catch (err) {
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
+  process.exit(3); // exit 3 = auth/network error (matches every other path + the documented contract)
 }
 
-// Read .vizzyignore from cwd. Missing file → no-op (empty patterns).
-let protectPatterns: string[] = [];
-try {
-  const text = readFileSync(join(process.cwd(), '.vizzyignore'), 'utf8');
-  protectPatterns = loadProtected(text);
-} catch {
-  // File does not exist or is unreadable — treat as empty.
-}
-
-// Read .vizzyscan from cwd. Missing file → no-op (empty rules).
-// The extra rules are threaded into classifyPath via the treeFetch/assess chain
-// through the App props (scanRules).
-let scanRulesText = '';
-try {
-  scanRulesText = readFileSync(join(process.cwd(), '.vizzyscan'), 'utf8');
-} catch {
-  // File does not exist or is unreadable — treat as empty.
-}
-const scanRules = loadScanRules(scanRulesText);
+// .vizzyignore protected list + .vizzyscan rules from cwd (missing → empty).
+const { protectPatterns, scanRules } = readGuards();
 
 const octokit = makeOctokit(token);
 const { waitUntilExit } = render(

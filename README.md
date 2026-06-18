@@ -28,7 +28,7 @@ then shows the interactive TUI flow. Render with `bash scripts/render-demo.sh`
 |---|---|
 | **npx** (no install) | `npx vizzy-cli` |
 | **npm global** | `npm i -g vizzy-cli` |
-| **gh extension** | `gh extension install jakecastillo/gh-vizzy` |
+| **gh extension** | `gh extension install jakecastillo/gh-vizzy` _(the `gh-vizzy` repo is not published yet — see [below](#install-as-a-gh-extension))_ |
 | **Homebrew** | `brew install vizzy-cli` _(TODO: tap not yet published)_ |
 
 ## Requirements
@@ -79,7 +79,7 @@ npm i -g vizzy-cli && vizzy
 | Flag | Effect |
 |---|---|
 | `--audit` | Report exposure risk over your currently-public repos and exit (conflicts with `--dry-run`) |
-| `--org <name>` | Audit a GitHub org instead of your personal repos (read-only; rejects write flags) |
+| `--org <name>` | Audit a GitHub org instead of your personal repos (read-only; conflicts with `--public`/`--private`) |
 | `--fail-on-new` | With `--audit`: exit non-zero only on NEW exposure vs the last `.vizzy/state.json` snapshot |
 | `--format <text\|json\|sarif>` | `--audit` output format (default `text`); `sarif` uploads to GitHub Code Scanning |
 | `--json` | Shorthand for `--format json` |
@@ -180,7 +180,7 @@ Runs the same checks non-interactively over your **currently-public** repos — 
 "what have I already exposed?" report — and exits non-zero if any repo has a
 danger-level finding, so you can wire it into CI or a pre-publish check. It makes
 no changes on GitHub (it writes only a local `.vizzy/state.json` snapshot for
-drift detection — pass nothing to disable, or add it to `.gitignore`).
+drift detection — add it to `.gitignore` if you don't want it tracked).
 
 ## Install as a gh extension
 

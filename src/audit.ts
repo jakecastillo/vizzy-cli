@@ -23,6 +23,7 @@
 import { assessRepos } from './core/scan.js';
 import type { TreeFetcher } from './core/scan.js';
 import type { AssessOptions } from './core/checks.js';
+import type { ExtraRules } from './core/sensitive.js';
 import type { Repo } from './types.js';
 import { toJsonReport, toSarif } from './core/report.js';
 import { VERSION } from './version.js';
@@ -38,6 +39,8 @@ export interface AuditOpts {
   assessOpts: AssessOptions;
   /** Bounded concurrency for tree fetches (default 5). */
   concurrency?: number;
+  /** Custom .vizzyscan rules (extra deny globs + allowlist) threaded into the scan. */
+  scanRules?: ExtraRules;
   /**
    * Output format for the audit report.
    * - 'text'  (default) — human-readable per-repo text
@@ -111,7 +114,7 @@ export async function runAudit(
     return 0;
   }
 
-  const assessOpts = { ...opts.assessOpts, concurrency: opts.concurrency };
+  const assessOpts = { ...opts.assessOpts, concurrency: opts.concurrency, scanRules: opts.scanRules };
   const assessments = await assessRepos(publicRepos, treeFetch, assessOpts);
 
   const format = opts.format ?? 'text';

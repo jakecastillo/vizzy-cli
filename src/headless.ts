@@ -33,10 +33,12 @@
 import { eligibleRepos } from './core/filter.js';
 import { resolveSelection } from './core/select.js';
 import { assessRepos } from './core/scan.js';
+import { partitionProtected } from './core/protected.js';
 import { applyChanges } from './apply.js';
 import { toJsonReport } from './core/report.js';
 import type { TreeFetcher } from './core/scan.js';
 import type { AssessOptions, RepoAssessment } from './core/checks.js';
+import type { ExtraRules } from './core/sensitive.js';
 import type { Repo, Visibility, VisibilitySetter } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,8 @@ export interface HeadlessFlags {
   forks?: boolean;
   /** Include archived repos in the eligible pool (default false). */
   includeArchived?: boolean;
+  /** Apply the .vizzyignore protected-repos list (default true). --no-protect sets false. */
+  protect?: boolean;
 }
 
 export interface HeadlessOpts {
@@ -78,6 +82,10 @@ export interface HeadlessOpts {
   assessOpts: AssessOptions;
   /** Bounded concurrency for tree fetches (default 5). */
   concurrency?: number;
+  /** .vizzyignore glob patterns (protected repos that must never go public). */
+  protectPatterns?: string[];
+  /** Custom .vizzyscan rules (extra deny globs + allowlist) threaded into the scan. */
+  scanRules?: ExtraRules;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +97,7 @@ interface RepoResult {
   severity: RepoAssessment['severity'];
   applied: boolean;
   skipped: boolean;
-  skippedReason?: 'danger' | 'caution-no-yes';
+  skippedReason?: 'danger' | 'caution-no-yes' | 'protected';
   applyError?: string;
 }
 
@@ -143,17 +151,37 @@ export async function runHeadless(
     return 2;
   }
 
-  // ── 4. Assess selected repos ─────────────────────────────────────────────
-  const assessments = await assessRepos(selected, deps.treeFetch, {
+  // ── 3b. Drop .vizzyignore-protected repos (public target only) ────────────
+  // A protected repo must NEVER be made public, even when named explicitly —
+  // the interactive flow drops them; the headless flow must too. Unless --no-protect.
+  let toAssess = selected;
+  const protectedResults: RepoResult[] = [];
+  if (flags.target === 'public' && flags.protect !== false) {
+    const { allowed, protectedOut } = partitionProtected(selected, opts.protectPatterns ?? []);
+    toAssess = allowed;
+    for (const r of protectedOut) {
+      protectedResults.push({
+        name: r.name,
+        severity: 'clean',
+        applied: false,
+        skipped: true,
+        skippedReason: 'protected',
+      });
+    }
+  }
+
+  // ── 4. Assess selected repos (custom .vizzyscan rules included) ───────────
+  const assessments = await assessRepos(toAssess, deps.treeFetch, {
     ...opts.assessOpts,
     concurrency: opts.concurrency,
+    scanRules: opts.scanRules,
   });
 
   // ── 5. Apply the SAFE subset ──────────────────────────────────────────────
   const canForceDanger = flags.forcePublic === true || flags.allowDanger === true;
 
   const toApply: Repo[] = [];
-  const results: RepoResult[] = [];
+  const results: RepoResult[] = [...protectedResults];
 
   for (const a of assessments) {
     if (a.severity === 'danger' && !canForceDanger) {
@@ -238,7 +266,9 @@ function emitText(
       const reason =
         r.skippedReason === 'danger'
           ? 'SKIPPED — danger finding (use --force-public or --allow-danger to override)'
-          : 'SKIPPED — caution (use --yes to apply)';
+          : r.skippedReason === 'protected'
+            ? 'SKIPPED — protected by .vizzyignore (use --no-protect to override)'
+            : 'SKIPPED — caution (use --yes to apply)';
       process.stdout.write(`${r.name}  ${severityTag}  ${reason}\n`);
       // Print findings for skipped repos
       if (a) {
