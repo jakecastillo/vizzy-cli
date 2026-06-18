@@ -11,6 +11,63 @@ export interface SensitiveHit {
 }
 
 // ---------------------------------------------------------------------------
+// Minimal glob matcher (no runtime deps)
+// ---------------------------------------------------------------------------
+// Supports: * (any chars except /), ** (any chars including /), ? (single char)
+// Does NOT support character classes or braces — sufficient for .vizzyscan usage.
+
+function globToRegex(glob: string): RegExp {
+  // Escape regex metacharacters except * and ?
+  let pattern = '';
+  let i = 0;
+  while (i < glob.length) {
+    const ch = glob[i]!;
+    if (ch === '*' && glob[i + 1] === '*') {
+      // ** — match any sequence including slashes
+      pattern += '.*';
+      i += 2;
+      // Skip an optional trailing slash after **
+      if (glob[i] === '/') i++;
+    } else if (ch === '*') {
+      // * — match any sequence except /
+      pattern += '[^/]*';
+      i++;
+    } else if (ch === '?') {
+      // ? — match any single char except /
+      pattern += '[^/]';
+      i++;
+    } else {
+      // Escape regex special chars
+      pattern += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      i++;
+    }
+  }
+  return new RegExp(`^${pattern}$`);
+}
+
+/** Returns true if the normalised path matches any of the given globs. */
+function matchesAnyGlob(normalizedPath: string, globs: string[]): boolean {
+  for (const glob of globs) {
+    const re = globToRegex(glob);
+    // Match against the full path AND just the basename so that globs like
+    // "*.secret" work on both "deploy.secret" and "config/deploy.secret".
+    if (re.test(normalizedPath)) return true;
+    const basename = normalizedPath.split('/').pop() ?? normalizedPath;
+    if (re.test(basename)) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Extra rules type (injected by callers, e.g. from loadScanRules)
+// ---------------------------------------------------------------------------
+
+export interface ExtraRules {
+  deny: string[];
+  allow: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Excluded directory prefixes — anything under these trees is never flagged.
 // ---------------------------------------------------------------------------
 
@@ -137,9 +194,21 @@ const RULES: Rule[] = [
  *
  * Returns a `SensitiveHit` if the path matches a danger rule, or `null`
  * if it is considered safe (exclusions apply first).
+ *
+ * @param extra  Optional custom rules from a .vizzyscan file.
+ *               `extra.deny` globs add matches on top of built-in rules.
+ *               `extra.allow` globs override both built-in rules and deny
+ *               globs (allow beats deny).
  */
-export function classifyPath(path: string): SensitiveHit | null {
+export function classifyPath(path: string, extra?: ExtraRules): SensitiveHit | null {
   const normalizedPath = path.replace(/\\/g, '/');
+
+  // ── Allow-list check (extra.allow beats everything) ──────────────────────
+  if (extra && extra.allow.length > 0) {
+    if (matchesAnyGlob(normalizedPath, extra.allow)) {
+      return null;
+    }
+  }
 
   // ── Directory exclusions ─────────────────────────────────────────────────
   for (const dir of EXCLUDED_DIRS) {
@@ -158,6 +227,13 @@ export function classifyPath(path: string): SensitiveHit | null {
   for (const rule of RULES) {
     if (rule.match(basename)) {
       return { path, rule: rule.name };
+    }
+  }
+
+  // ── Custom deny globs (from .vizzyscan) ──────────────────────────────────
+  if (extra && extra.deny.length > 0) {
+    if (matchesAnyGlob(normalizedPath, extra.deny)) {
+      return { path, rule: 'custom-deny' };
     }
   }
 
