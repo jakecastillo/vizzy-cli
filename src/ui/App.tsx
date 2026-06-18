@@ -9,6 +9,7 @@ import { applyChanges } from '../apply.js';
 import { partitionProtected } from '../core/protected.js';
 import { assessRepos, type TreeFetcher } from '../core/scan.js';
 import type { RepoAssessment, AssessOptions } from '../core/checks.js';
+import type { ExtraRules } from '../core/sensitive.js';
 import { TargetSelect } from './TargetSelect.js';
 import { RepoList } from './RepoList.js';
 import { Confirm } from './Confirm.js';
@@ -32,6 +33,11 @@ export interface AppProps {
    * Passed by bin.tsx after reading cwd/.vizzyignore; missing file → [].
    */
   protectPatterns?: string[];
+  /**
+   * Custom scan rules loaded from .vizzyscan (or empty).
+   * Passed by bin.tsx after reading cwd/.vizzyscan; missing file → empty rules.
+   */
+  scanRules?: ExtraRules;
 }
 
 type Stage = 'target' | 'loading' | 'error' | 'empty' | 'select' | 'scanning' | 'confirm' | 'applying' | 'done';
@@ -56,6 +62,7 @@ export function App({
   onComplete = () => {},
   treeFetch,
   protectPatterns = [],
+  scanRules,
 }: AppProps): JSX.Element {
   const { exit } = useApp();
   const preset = initialTarget(flags);
@@ -139,6 +146,7 @@ export function App({
         const results = await assessRepos(allowed, fetcher, {
           ...DEFAULT_ASSESS_OPTS,
           now: new Date(),
+          scanRules,
         });
         if (!cancelled) {
           setAssessments(results);
@@ -173,7 +181,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [stage, target, scanRepos, treeFetch, protectPatterns, flags.protect]);
+  }, [stage, target, scanRepos, treeFetch, protectPatterns, scanRules, flags.protect]);
 
   // Apply once confirmed.
   useEffect(() => {

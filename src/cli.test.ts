@@ -88,4 +88,46 @@ describe('parseArgs', () => {
     const f = parseArgs([]);
     expect(f.format).toBeUndefined();
   });
+
+  // --- new flags (bead vizzy-cli-9cm.4) ---
+
+  it('parses --repos csv into string[]', () => {
+    const f = parseArgs(['--repos', 'alpha,beta,gamma']);
+    expect(f.repos).toEqual(['alpha', 'beta', 'gamma']);
+  });
+
+  it('repos defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.repos).toBeUndefined();
+  });
+
+  it('parses --all-eligible as allEligible=true', () => {
+    const f = parseArgs(['--all-eligible']);
+    expect(f.allEligible).toBe(true);
+  });
+
+  it('allEligible defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.allEligible).toBeUndefined();
+  });
+
+  it('parses --yes as yes=true', () => {
+    const f = parseArgs(['--yes']);
+    expect(f.yes).toBe(true);
+  });
+
+  it('yes defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.yes).toBeUndefined();
+  });
+
+  it('parses --allow-danger as allowDanger=true', () => {
+    const f = parseArgs(['--allow-danger']);
+    expect(f.allowDanger).toBe(true);
+  });
+
+  it('allowDanger defaults to undefined when not passed', () => {
+    const f = parseArgs([]);
+    expect(f.allowDanger).toBeUndefined();
+  });
 });

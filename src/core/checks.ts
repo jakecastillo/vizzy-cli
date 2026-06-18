@@ -16,6 +16,7 @@
  */
 
 import { scanPaths } from './sensitive.js';
+import type { ExtraRules } from './sensitive.js';
 import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
 
@@ -52,6 +53,8 @@ export interface AssessOptions {
   staleMonths: number;
   highProfileStars: number;
   now: Date;
+  /** Optional custom scan rules from .vizzyscan (deny globs + allow list). */
+  scanRules?: ExtraRules;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +117,7 @@ export function assess(
     });
   } else {
     // ── secret-file (danger) ─────────────────────────────────────────────────
-    const hits = scanPaths(paths);
+    const hits = scanPaths(paths, opts.scanRules);
     for (const hit of hits) {
       findings.push({
         kind: 'secret-file',

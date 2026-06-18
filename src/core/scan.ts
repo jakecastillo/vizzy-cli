@@ -85,7 +85,7 @@ export async function assessRepos(
 
       if (opts.deep && opts.contentFetcher && paths !== null) {
         // BOUNDED: only fetch content for paths that classifyPath flags as suspicious.
-        const suspiciousPaths = paths.filter((p) => classifyPath(p) !== null);
+        const suspiciousPaths = paths.filter((p) => classifyPath(p, opts.scanRules) !== null);
         if (suspiciousPaths.length > 0) {
           const allHits: ContentHit[] = [];
           for (const p of suspiciousPaths) {
@@ -113,7 +113,7 @@ export async function assessRepos(
         try {
           const histResult = await opts.historyFetcher(repo);
           // Filter to only sensitive filenames; assess() will further exclude HEAD paths.
-          historyHits = histResult.paths.filter((p) => classifyPath(p) !== null);
+          historyHits = histResult.paths.filter((p) => classifyPath(p, opts.scanRules) !== null);
         } catch {
           // A history-fetch error → mark scan-incomplete; never a silent clean.
           historyScanIncomplete = true;

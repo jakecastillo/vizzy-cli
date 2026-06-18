@@ -242,11 +242,13 @@ export function classifyPath(path: string, extra?: ExtraRules): SensitiveHit | n
 
 /**
  * Scan an array of file paths and return all sensitive hits.
+ *
+ * @param extra  Optional custom rules from a .vizzyscan file (passed through to classifyPath).
  */
-export function scanPaths(paths: string[]): SensitiveHit[] {
+export function scanPaths(paths: string[], extra?: ExtraRules): SensitiveHit[] {
   const hits: SensitiveHit[] = [];
   for (const p of paths) {
-    const hit = classifyPath(p);
+    const hit = classifyPath(p, extra);
     if (hit !== null) hits.push(hit);
   }
   return hits;
