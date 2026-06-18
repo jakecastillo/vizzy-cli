@@ -5,22 +5,26 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
-Bulk-change the visibility of your **personal** GitHub repositories from an
-interactive terminal UI — pick a target (public/private), check off the repos,
-confirm, done. Inspired by the feel of `yarn upgrade-interactive`.
+**Flip the visibility of your GitHub repos in bulk, right from your terminal —
+and scan every repo for exposed secrets _before_ it goes public.** Pick a target
+(public/private), check off the repos, confirm, done — with the feel of `yarn
+upgrade-interactive`.
 
-> ⚠️ Making a repository **public exposes its code**. Before going public vizzy
-> runs [pre-visibility checks](#pre-visibility-checks) — a sensitive-file scan plus
-> risk signals — and scales the confirmation to the risk; `--dry-run` previews any
-> change first.
+One careless "make public" can leak an API key forever. So before vizzy switches a
+repo to public it runs [pre-visibility checks](#pre-visibility-checks) — a
+sensitive-file scan plus risk signals — and scales the confirmation friction to
+what it finds. It also audits what you've **already** exposed and runs headless in
+CI. `--dry-run` previews any change first.
 
 ## Demo
 
-<img src="demo/vizzy.gif" alt="vizzy demo — safety skip leading, then interactive TUI" width="800">
+vizzy leads with the safety story — it automatically **skips a DANGER repo**
+(a detected secret) before going public, then drops into the interactive TUI to
+flip the rest.
 
-_The demo leads with vizzy skipping a DANGER repo (detected secret) automatically,
-then shows the interactive TUI flow. Render with `bash scripts/render-demo.sh`
-(requires [vhs](https://github.com/charmbracelet/vhs))._
+_To generate the animated demo locally, run `bash scripts/render-demo.sh` (requires
+[vhs](https://github.com/charmbracelet/vhs)); it renders `demo/vizzy.gif` from
+[`demo/vizzy.tape`](demo/vizzy.tape)._
 
 ## Install
 
@@ -28,8 +32,11 @@ then shows the interactive TUI flow. Render with `bash scripts/render-demo.sh`
 |---|---|
 | **npx** (no install) | `npx vizzy-cli` |
 | **npm global** | `npm i -g vizzy-cli` |
-| **gh extension** | `gh extension install jakecastillo/gh-vizzy` _(the `gh-vizzy` repo is not published yet — see [below](#install-as-a-gh-extension))_ |
-| **Homebrew** | `brew install vizzy-cli` _(TODO: tap not yet published)_ |
+
+> **Planned, not yet published:** a `gh` extension
+> (`gh extension install jakecastillo/gh-vizzy`) and a Homebrew formula
+> (`brew install vizzy-cli`). Until those land, install via **npx** or **npm**
+> above — see [Install as a gh extension](#install-as-a-gh-extension) for status.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 {
   "name": "vizzy-cli",
   "version": "0.3.0",
-  "description": "Bulk-toggle the visibility of your personal GitHub repos via an interactive TUI",
+  "description": "Bulk-flip GitHub repo visibility from your terminal — with a secret-scanning safety net so a 'make public' never becomes a leak",
   "author": "Jake Castillo",
   "homepage": "https://github.com/jakecastillo/vizzy-cli#readme",
   "repository": {

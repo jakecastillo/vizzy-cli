@@ -7,6 +7,6 @@ export default defineConfig({
   platform: 'node',
   outDir: 'dist',
   clean: true,
-  sourcemap: true,
+  sourcemap: false, // published CLI ships a lean bundle; no source map (was ~213 KB / 2/3 of the tarball)
   dts: false,
 });

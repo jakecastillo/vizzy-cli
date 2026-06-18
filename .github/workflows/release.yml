@@ -1,8 +1,15 @@
-# Release workflow — npm OIDC Trusted Publishing with provenance
-# Triggered on version tags (push tags v*).
-# STAGED: this file is committed but publishing is a gated human action.
-# Do NOT run manually or via workflow_dispatch; the publish step requires
-# a version tag and npm Trusted Publishing configured on npmjs.com.
+# Release workflow — npm Trusted Publishing (OIDC) with automatic provenance.
+# Triggered on version tags (push tag v*).
+#
+# ONE-TIME SETUP required before this works (it is intentionally inert until then):
+#   1. The FIRST publish must be done manually/locally — npm OIDC cannot bootstrap
+#      a package that does not yet exist on the registry (npm/cli#8544).
+#   2. On npmjs.com -> vizzy-cli -> Settings -> Trusted Publisher, add this repo
+#      (jakecastillo/vizzy-cli) and this workflow file name (release.yml).
+#   3. Recommended: set the npm account publishing access to
+#      "Require two-factor authentication and disallow tokens".
+# After that, pushing a tag (e.g. v0.3.1) publishes automatically with NO stored
+# NPM_TOKEN — short-lived OIDC credentials and a verified provenance badge on npm.
 
 name: Release
 
@@ -12,7 +19,7 @@ on:
       - 'v*'
 
 permissions:
-  id-token: write   # required for OIDC Trusted Publishing (npm provenance)
+  id-token: write # required for OIDC trusted publishing + provenance attestation
   contents: read
 
 jobs:
@@ -23,15 +30,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # trusted publishing requires Node >= 22.14.0
           registry-url: 'https://registry.npmjs.org'
           cache: npm
+
+      # Node 22 ships npm 10.x; trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
 
       - run: npm ci
 
       - run: npm run build
 
-      - name: Publish to npm (OIDC provenance)
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm test
+
+      - name: Publish to npm (OIDC trusted publishing, provenance automatic)
+        run: npm publish --access public --provenance
