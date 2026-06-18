@@ -63,6 +63,13 @@ const DANGER_FINDING: Finding = {
   detail: '.env',
 };
 
+const HISTORY_FINDING: Finding = {
+  kind: 'secret-in-history',
+  severity: 'danger',
+  label: 'Secret deleted from history: .env',
+  detail: '.env',
+};
+
 const CAUTION_FINDING: Finding = {
   kind: 'no-license',
   severity: 'caution',
@@ -275,5 +282,28 @@ describe('toSarif', () => {
   it('handles empty assessments', () => {
     const result = toSarif([]) as { runs: Array<{ results: unknown[] }> };
     expect(result.runs[0].results).toHaveLength(0);
+  });
+
+  it('secret-in-history kind is covered by KIND_DESCRIPTIONS (exhaustive Record)', () => {
+    // If KIND_DESCRIPTIONS does not cover 'secret-in-history', the SARIF shortDescription
+    // would fall back to the raw kind string. We verify the rule is described.
+    const assessment = makeAssessment({ name: 'hist-repo' }, [HISTORY_FINDING]);
+    const result = toSarif([assessment]) as {
+      runs: Array<{ tool: { driver: { rules: Array<{ id: string; shortDescription: { text: string } }> } } }>;
+    };
+    const rule = result.runs[0].tool.driver.rules.find((r) => r.id === 'secret-in-history');
+    expect(rule).toBeDefined();
+    // The description must not be the raw kind string (i.e., KIND_DESCRIPTIONS has an entry)
+    expect(rule!.shortDescription.text).not.toBe('secret-in-history');
+  });
+
+  it('secret-in-history finding maps to result.level "error"', () => {
+    const assessment = makeAssessment({ name: 'hist-repo' }, [HISTORY_FINDING]);
+    const result = toSarif([assessment]) as {
+      runs: Array<{ results: Array<{ level: string; ruleId: string }> }>;
+    };
+    const histResult = result.runs[0].results.find((r) => r.ruleId === 'secret-in-history');
+    expect(histResult).toBeDefined();
+    expect(histResult!.level).toBe('error');
   });
 });

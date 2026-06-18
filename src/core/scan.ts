@@ -36,6 +36,13 @@ export type TreeFetcher = (repo: Repo) => Promise<{ paths: string[]; truncated: 
  */
 export type ContentFetcher = (repo: Repo, path: string) => Promise<string>;
 
+/**
+ * Injected history fetcher for the deep history pass.
+ * Returns the set of all filenames seen across recent commits and a truncated flag.
+ * Errors propagate → scan-incomplete.
+ */
+export type HistoryFetcher = (repo: Repo) => Promise<{ paths: string[]; truncated: boolean }>;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -53,7 +60,7 @@ export type ContentFetcher = (repo: Repo, path: string) => Promise<string>;
 export async function assessRepos(
   repos: Repo[],
   fetch: TreeFetcher,
-  opts: AssessOptions & { concurrency?: number; deep?: boolean; contentFetcher?: ContentFetcher },
+  opts: AssessOptions & { concurrency?: number; deep?: boolean; contentFetcher?: ContentFetcher; historyFetcher?: HistoryFetcher },
 ): Promise<RepoAssessment[]> {
   const limit = pLimit(opts.concurrency ?? 5);
 
@@ -95,12 +102,30 @@ export async function assessRepos(
         }
       }
 
+      // ── Optional history pass (opt-in, injected) ──────────────────────────
+      // Only runs when deep=true AND a historyFetcher is provided.
+      // historyHits = filenames from recent commits that match the sensitive classifier
+      // but are NOT in the current HEAD tree (deduplication happens in assess()).
+      let historyHits: string[] | undefined;
+      let historyScanIncomplete = false;
+
+      if (opts.deep && opts.historyFetcher) {
+        try {
+          const histResult = await opts.historyFetcher(repo);
+          // Filter to only sensitive filenames; assess() will further exclude HEAD paths.
+          historyHits = histResult.paths.filter((p) => classifyPath(p) !== null);
+        } catch {
+          // A history-fetch error → mark scan-incomplete; never a silent clean.
+          historyScanIncomplete = true;
+        }
+      }
+
       if (paths !== null && truncated) {
         // Truncated: assess the paths we have but also inject scan-incomplete.
         // We do this by calling assess twice and merging — actually, the cleanest
         // approach is to pass the paths so secret-file findings are preserved,
         // then manually add a scan-incomplete finding on top.
-        const base = assess(repo, paths, opts, contentHits);
+        const base = assess(repo, paths, opts, contentHits, historyHits);
         const extraFindings: Finding[] = [];
         extraFindings.push({
           kind: 'scan-incomplete',
@@ -116,6 +141,14 @@ export async function assessRepos(
             detail: 'A content fetch error occurred during the deep scan.',
           });
         }
+        if (historyScanIncomplete) {
+          extraFindings.push({
+            kind: 'scan-incomplete',
+            severity: 'caution',
+            label: 'History fetch failed — scan incomplete',
+            detail: 'A history fetch error occurred during the deep scan.',
+          });
+        }
         const findings = [...base.findings, ...extraFindings];
         // Re-derive severity and requiredConfirm to account for the new finding.
         const severity = findings.some((f) => f.severity === 'danger')
@@ -129,17 +162,28 @@ export async function assessRepos(
       }
 
       // paths is null (fetch failed) or a normal non-truncated tree.
-      const base = assess(repo, paths, opts, contentHits);
+      const base = assess(repo, paths, opts, contentHits, historyHits);
 
-      // If a content fetch error occurred, inject a scan-incomplete finding.
-      if (contentScanIncomplete) {
-        const scanIncomplete: Finding = {
-          kind: 'scan-incomplete',
-          severity: 'caution',
-          label: 'Content fetch failed — scan incomplete',
-          detail: 'A content fetch error occurred during the deep scan.',
-        };
-        const findings = [...base.findings, scanIncomplete];
+      // If a content or history fetch error occurred, inject scan-incomplete findings.
+      if (contentScanIncomplete || historyScanIncomplete) {
+        const extraFindings: Finding[] = [];
+        if (contentScanIncomplete) {
+          extraFindings.push({
+            kind: 'scan-incomplete',
+            severity: 'caution',
+            label: 'Content fetch failed — scan incomplete',
+            detail: 'A content fetch error occurred during the deep scan.',
+          });
+        }
+        if (historyScanIncomplete) {
+          extraFindings.push({
+            kind: 'scan-incomplete',
+            severity: 'caution',
+            label: 'History fetch failed — scan incomplete',
+            detail: 'A history fetch error occurred during the deep scan.',
+          });
+        }
+        const findings = [...base.findings, ...extraFindings];
         const severity = findings.some((f) => f.severity === 'danger')
           ? ('danger' as const)
           : findings.some((f) => f.severity === 'caution')

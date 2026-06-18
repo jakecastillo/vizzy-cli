@@ -30,6 +30,7 @@ export interface Finding {
   kind:
     | 'secret-file'
     | 'secret-content'
+    | 'secret-in-history'
     | 'no-license'
     | 'stale'
     | 'high-profile'
@@ -90,12 +91,16 @@ function deriveConfirmLevel(severity: Severity): ConfirmLevel {
  * @param opts         - Injected thresholds and reference time (makes tests deterministic).
  * @param contentHits  - Optional content-scan hits (from core/content.ts scanContent).
  *                       Each hit produces one secret-content danger finding.
+ * @param historyHits  - Optional filenames from commit history that match the sensitive
+ *                       classifier but are NOT present in the current HEAD tree.
+ *                       Each unique path produces one secret-in-history danger finding.
  */
 export function assess(
   repo: Repo,
   paths: string[] | null,
   opts: AssessOptions,
   contentHits?: ContentHit[],
+  historyHits?: string[],
 ): RepoAssessment {
   const findings: Finding[] = [];
 
@@ -129,6 +134,22 @@ export function assess(
         label: `Secret detected in content (${hit.rule})`,
         detail: hit.match,
       });
+    }
+  }
+
+  // ── secret-in-history (danger) — sensitive file deleted from HEAD but seen in history ──
+  // Only flag files that are NOT currently in the HEAD tree (no double-counting).
+  if (historyHits && historyHits.length > 0) {
+    const headSet = new Set(paths ?? []);
+    for (const histPath of historyHits) {
+      if (!headSet.has(histPath)) {
+        findings.push({
+          kind: 'secret-in-history',
+          severity: 'danger',
+          label: `Secret deleted from history: ${histPath}`,
+          detail: histPath,
+        });
+      }
     }
   }
 

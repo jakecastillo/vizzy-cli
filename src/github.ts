@@ -166,3 +166,51 @@ export async function getBlobText(
   const clean = (data.content as string).replace(/\s/g, '');
   return Buffer.from(clean, 'base64').toString('utf8');
 }
+
+/**
+ * Walk recent commits' changed files to collect the set of all filenames that
+ * have ever appeared in the recent history of a repository.
+ *
+ * Uses the List commits API (GET /repos/{owner}/{repo}/commits) with per_page
+ * set to maxCommits. Each commit's `files` array is flattened into a deduplicated
+ * set of paths.
+ *
+ * `truncated` is true when the API returned exactly maxCommits results, indicating
+ * there may be more history that was not examined.
+ *
+ * Errors propagate — callers should treat them as scan-incomplete.
+ *
+ * @param octokit    - Octokit instance (or compatible subset).
+ * @param owner      - Repository owner.
+ * @param repo       - Repository name.
+ * @param maxCommits - Maximum number of commits to inspect (default 100).
+ * @returns          - Deduplicated file paths seen across recent commits, and a
+ *                     truncated flag indicating whether the history window was capped.
+ */
+export async function listHistoryFilenames(
+  octokit: Pick<Octokit, 'rest'>,
+  owner: string,
+  repo: string,
+  maxCommits = 100,
+): Promise<{ paths: string[]; truncated: boolean }> {
+  const { data: commits } = await octokit.rest.repos.listCommits({
+    owner,
+    repo,
+    per_page: maxCommits,
+  });
+
+  const seen = new Set<string>();
+  for (const commit of commits) {
+    const files = (commit as { files?: Array<{ filename: string }> }).files;
+    if (Array.isArray(files)) {
+      for (const f of files) {
+        seen.add(f.filename);
+      }
+    }
+  }
+
+  return {
+    paths: [...seen],
+    truncated: commits.length >= maxCommits,
+  };
+}

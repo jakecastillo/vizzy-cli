@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { assessRepos } from './scan.js';
-import type { TreeFetcher, ContentFetcher } from './scan.js';
+import type { TreeFetcher, ContentFetcher, HistoryFetcher } from './scan.js';
 import type { AssessOptions } from './checks.js';
 import type { Repo } from '../types.js';
 
@@ -348,5 +348,92 @@ describe('assessRepos — content pass (deep=true)', () => {
     const [result] = await assessRepos(repos, treeFetcher, { ...OPTS, deep: true, contentFetcher });
     const kinds = result!.findings.map((f) => f.kind);
     expect(kinds).not.toContain('secret-content');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// History pass — opt-in, injected HistoryFetcher
+// ---------------------------------------------------------------------------
+
+describe('assessRepos — history pass (deep=true, historyFetcher)', () => {
+  it('deleted .env in history → secret-in-history danger finding', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    // HEAD tree is clean
+    const treeFetcher: TreeFetcher = async () => ({ paths: ['README.md'], truncated: false });
+    // .env was deleted; it appears in history but NOT in HEAD
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({
+      paths: ['.env', 'README.md'],
+      truncated: false,
+    });
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-in-history');
+    expect(result!.severity).toBe('danger');
+  });
+
+  it('a secret file present in HEAD is NOT double-flagged as history', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    // .env is in current HEAD
+    const treeFetcher: TreeFetcher = async () => ({ paths: ['.env'], truncated: false });
+    // .env also appears in history
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({
+      paths: ['.env'],
+      truncated: false,
+    });
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).toContain('secret-file');
+    expect(kinds).not.toContain('secret-in-history');
+  });
+
+  it('history fetcher is NOT called without deep=true', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({ paths: [], truncated: false });
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({ paths: [], truncated: false });
+
+    await assessRepos(repos, treeFetcher, { ...OPTS, historyFetcher });
+    expect(historyFetcher).not.toHaveBeenCalled();
+  });
+
+  it('history fetcher error → scan-incomplete, not silent clean', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({ paths: [], truncated: false });
+    const historyFetcher: HistoryFetcher = vi.fn().mockRejectedValue(new Error('history fetch failed'));
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).toContain('scan-incomplete');
+    expect(result!.severity).not.toBe('clean');
+  });
+
+  it('clean history (no sensitive filenames) → no secret-in-history finding', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({ paths: [], truncated: false });
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({
+      paths: ['README.md', 'src/index.ts'],
+      truncated: false,
+    });
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).not.toContain('secret-in-history');
   });
 });

@@ -8,6 +8,7 @@ import {
   explainError,
   makeSetter,
   getBlobText,
+  listHistoryFilenames,
   type RawRepo,
 } from './github.js';
 
@@ -222,5 +223,78 @@ describe('getBlobText', () => {
     const getBlob = vi.fn().mockRejectedValue(new Error('blob not found'));
     const octokit = { rest: { git: { getBlob } } };
     await expect(getBlobText(octokit as never, 'me', 'r', 'badsha')).rejects.toThrow('blob not found');
+  });
+});
+
+describe('listHistoryFilenames', () => {
+  function makeCommit(files: string[]) {
+    return { files: files.map((filename) => ({ filename })) };
+  }
+
+  it('returns all unique filenames from commits and truncated=false when under maxCommits', async () => {
+    const listCommits = vi.fn().mockResolvedValue({
+      data: [
+        makeCommit(['.env', 'src/index.ts']),
+        makeCommit(['README.md', 'src/index.ts']),
+      ],
+    });
+    const octokit = { rest: { repos: { listCommits } } };
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toContain('.env');
+    expect(result.paths).toContain('src/index.ts');
+    expect(result.paths).toContain('README.md');
+    // Deduped — src/index.ts appears only once
+    expect(result.paths.filter((p) => p === 'src/index.ts')).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('sets truncated=true when returned commits equals maxCommits', async () => {
+    // 3 commits returned, maxCommits=3 → truncated
+    const listCommits = vi.fn().mockResolvedValue({
+      data: [
+        makeCommit(['a.txt']),
+        makeCommit(['b.txt']),
+        makeCommit(['c.txt']),
+      ],
+    });
+    const octokit = { rest: { repos: { listCommits } } };
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r', 3);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('handles commits with no files array gracefully', async () => {
+    const listCommits = vi.fn().mockResolvedValue({
+      data: [
+        { files: undefined },
+        makeCommit(['config.env']),
+      ],
+    });
+    const octokit = { rest: { repos: { listCommits } } };
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toContain('config.env');
+    expect(result.truncated).toBe(false);
+  });
+
+  it('defaults maxCommits to 100', async () => {
+    const listCommits = vi.fn().mockResolvedValue({ data: [] });
+    const octokit = { rest: { repos: { listCommits } } };
+    await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(listCommits).toHaveBeenCalledWith(
+      expect.objectContaining({ per_page: 100 }),
+    );
+  });
+
+  it('returns empty paths and truncated=false for a repo with no commits', async () => {
+    const listCommits = vi.fn().mockResolvedValue({ data: [] });
+    const octokit = { rest: { repos: { listCommits } } };
+    const result = await listHistoryFilenames(octokit as never, 'me', 'r');
+    expect(result.paths).toEqual([]);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('propagates errors so they become scan-incomplete upstream', async () => {
+    const listCommits = vi.fn().mockRejectedValue(new Error('network error'));
+    const octokit = { rest: { repos: { listCommits } } };
+    await expect(listHistoryFilenames(octokit as never, 'me', 'r')).rejects.toThrow('network error');
   });
 });
