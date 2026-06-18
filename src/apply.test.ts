@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { applyChanges } from './apply.js';
-import type { Repo, RowStatus } from './types.js';
+import type { Repo, RowStatus, RepoMutation } from './types.js';
 
 const repo = (name: string): Repo => ({
   name,
@@ -23,6 +23,36 @@ describe('applyChanges', () => {
       { name: 'b', ok: true },
     ]);
     expect(setter).toHaveBeenCalledWith('me', 'a', 'private');
+  });
+
+  // --- generalized mutation path (bead vizzy-cli-9cm.12) ---
+
+  it('accepts a RepoMutation and calls it with the full repo', async () => {
+    const mutation: RepoMutation = vi.fn().mockResolvedValue(undefined);
+    const results = await applyChanges([repo('x'), repo('y')], mutation);
+    expect(results).toEqual([{ name: 'x', ok: true }, { name: 'y', ok: true }]);
+    // mutation receives the full Repo object
+    expect(mutation).toHaveBeenCalledWith(expect.objectContaining({ name: 'x', owner: 'me' }));
+    expect(mutation).toHaveBeenCalledWith(expect.objectContaining({ name: 'y', owner: 'me' }));
+  });
+
+  it('mutation path: error isolation — one failure does not abort the batch', async () => {
+    const mutation: RepoMutation = vi.fn().mockImplementation(async (r: Repo) => {
+      if (r.name === 'b') throw new Error('archive failed');
+    });
+    const results = await applyChanges([repo('a'), repo('b'), repo('c')], mutation);
+    expect(results.find((r) => r.name === 'b')).toEqual({ name: 'b', ok: false, error: 'archive failed' });
+    expect(results.filter((r) => r.ok)).toHaveLength(2);
+  });
+
+  it('mutation path: emits progress transitions', async () => {
+    const events: Array<[string, RowStatus]> = [];
+    const mutation: RepoMutation = vi.fn().mockResolvedValue(undefined);
+    await applyChanges([repo('a')], mutation, {
+      onProgress: (name, status) => events.push([name, status]),
+    });
+    expect(events).toContainEqual(['a', 'applying']);
+    expect(events).toContainEqual(['a', 'done']);
   });
 
   it('captures per-repo failures without aborting the batch', async () => {

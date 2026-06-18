@@ -1,5 +1,6 @@
 export type Visibility = 'public' | 'private';
 export type Target = Visibility;
+export type Operation = 'visibility' | 'archive';
 
 export interface Repo {
   name: string;
@@ -24,5 +25,11 @@ export type VisibilitySetter = (
   repo: string,
   visibility: Visibility,
 ) => Promise<void>;
+
+/**
+ * A generic per-repo mutation function. Used to generalize applyChanges
+ * beyond visibility (e.g. archive/unarchive). Receives the full Repo object.
+ */
+export type RepoMutation = (repo: Repo) => Promise<void>;
 
 export type RowStatus = 'pending' | 'applying' | 'done' | 'error';

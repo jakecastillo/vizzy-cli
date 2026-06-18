@@ -75,6 +75,16 @@ export interface CliFlags {
    * a non-zero exit. No effect when no prior snapshot exists.
    */
   failOnNew?: boolean;
+  /**
+   * Archive selected repos (make them read-only). Cannot be combined with
+   * --public or --private. No exposure scan is run (archiving is reversible).
+   */
+  archive?: boolean;
+  /**
+   * Unarchive selected repos (restore write access). Cannot be combined with
+   * --public or --private.
+   */
+  unarchive?: boolean;
 }
 
 export function parseArgs(
@@ -133,6 +143,14 @@ export function parseArgs(
     .option(
       '--fail-on-new',
       'exit non-zero only when there is new exposure or new findings vs the prior snapshot (--audit)',
+    )
+    .addOption(
+      new Option('--archive', 'archive selected repos (make read-only; reuses selection + apply UI; no exposure scan)')
+        .conflicts(['public', 'private']),
+    )
+    .addOption(
+      new Option('--unarchive', 'unarchive selected repos (restore write access; no exposure scan)')
+        .conflicts(['public', 'private']),
     );
 
   if (opts.exitOverride) program.exitOverride();

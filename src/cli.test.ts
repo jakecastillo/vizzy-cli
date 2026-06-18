@@ -166,4 +166,48 @@ describe('parseArgs', () => {
   it('check is undefined when --check is absent', () => {
     expect(parseArgs([]).check).toBeUndefined();
   });
+
+  // --- archive flags (bead vizzy-cli-9cm.12) ---
+
+  it('parses --archive as archive=true', () => {
+    const f = parseArgs(['--archive']);
+    expect(f.archive).toBe(true);
+  });
+
+  it('archive defaults to undefined when not passed', () => {
+    expect(parseArgs([]).archive).toBeUndefined();
+  });
+
+  it('parses --unarchive as unarchive=true', () => {
+    const f = parseArgs(['--unarchive']);
+    expect(f.unarchive).toBe(true);
+  });
+
+  it('unarchive defaults to undefined when not passed', () => {
+    expect(parseArgs([]).unarchive).toBeUndefined();
+  });
+
+  it('--archive combined with --public is rejected (exit 2)', () => {
+    expect(() =>
+      parseArgs(['--archive', '--public'], { exitOverride: true }),
+    ).toThrow();
+  });
+
+  it('--archive combined with --private is rejected (exit 2)', () => {
+    expect(() =>
+      parseArgs(['--archive', '--private'], { exitOverride: true }),
+    ).toThrow();
+  });
+
+  it('--unarchive combined with --public is rejected (exit 2)', () => {
+    expect(() =>
+      parseArgs(['--unarchive', '--public'], { exitOverride: true }),
+    ).toThrow();
+  });
+
+  it('--unarchive combined with --private is rejected (exit 2)', () => {
+    expect(() =>
+      parseArgs(['--unarchive', '--private'], { exitOverride: true }),
+    ).toThrow();
+  });
 });

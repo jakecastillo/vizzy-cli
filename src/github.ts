@@ -110,6 +110,22 @@ export async function setVisibility(
   await octokit.rest.repos.update({ owner, repo, visibility });
 }
 
+/**
+ * Archive or unarchive a repository via PATCH /repos/{owner}/{repo}.
+ *
+ * Passing `archived: true` archives the repo (makes it read-only).
+ * Passing `archived: false` unarchives it (restores write access).
+ * Archiving is reversible and non-exposing — no exposure scan needed.
+ */
+export async function setArchived(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  archived: boolean,
+): Promise<void> {
+  await octokit.rest.repos.update({ owner, repo, archived });
+}
+
 interface HttpError {
   status: number;
   message: string;

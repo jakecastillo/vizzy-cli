@@ -305,6 +305,29 @@ describe('listHistoryFilenames', () => {
 // listOrgRepos (bead vizzy-cli-9cm.10)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// setArchived (bead vizzy-cli-9cm.12)
+// ---------------------------------------------------------------------------
+
+describe('setArchived', () => {
+  it('calls repos.update with archived:true to archive a repo', async () => {
+    const update = vi.fn().mockResolvedValue({ data: {} });
+    const octokit = { rest: { repos: { update } } };
+    // Import setArchived from this module
+    const { setArchived } = await import('./github.js');
+    await setArchived(octokit as never, 'me', 'r', true);
+    expect(update).toHaveBeenCalledWith({ owner: 'me', repo: 'r', archived: true });
+  });
+
+  it('calls repos.update with archived:false to unarchive a repo', async () => {
+    const update = vi.fn().mockResolvedValue({ data: {} });
+    const octokit = { rest: { repos: { update } } };
+    const { setArchived } = await import('./github.js');
+    await setArchived(octokit as never, 'me', 'r', false);
+    expect(update).toHaveBeenCalledWith({ owner: 'me', repo: 'r', archived: false });
+  });
+});
+
 describe('listOrgRepos', () => {
   it('paginates org repos via GET /orgs/{org}/repos and normalizes them', async () => {
     const paginate = vi.fn().mockResolvedValue([
