@@ -210,4 +210,15 @@ describe('parseArgs', () => {
       parseArgs(['--unarchive', '--private'], { exitOverride: true }),
     ).toThrow();
   });
+
+  // --- accessible mode flags (bead vizzy-cli-9cm.14) ---
+
+  it('parses --plain as plain=true', () => {
+    const f = parseArgs(['--plain']);
+    expect(f.plain).toBe(true);
+  });
+
+  it('plain defaults to undefined when not passed', () => {
+    expect(parseArgs([]).plain).toBeUndefined();
+  });
 });

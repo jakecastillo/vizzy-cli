@@ -3,6 +3,7 @@ import { Box, Text, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import type { CliFlags } from '../cli.js';
 import type { Repo, Visibility, VisibilitySetter, RowStatus } from '../types.js';
+import { colorEnabled, themeColor } from './theme.js';
 import { eligibleRepos } from '../core/filter.js';
 import { buildPlan } from '../core/plan.js';
 import { applyChanges } from '../apply.js';
@@ -66,6 +67,7 @@ export function App({
 }: AppProps): JSX.Element {
   const { exit } = useApp();
   const preset = initialTarget(flags);
+  const colors = colorEnabled(process.env['NO_COLOR'], Boolean(flags.plain));
 
   const [stage, setStage] = useState<Stage>(preset ? 'loading' : 'target');
   const [target, setTarget] = useState<Visibility | null>(preset);
@@ -213,7 +215,7 @@ export function App({
     );
 
   if (stage === 'loading') return <Text>Loading your repositories…</Text>;
-  if (stage === 'error') return <Text color="red">{errorMsg}</Text>;
+  if (stage === 'error') return <Text color={themeColor('red', colors)}>{errorMsg}</Text>;
   if (stage === 'empty')
     return <Text>Nothing to do — no repos need to change to {target}.</Text>;
 
@@ -247,13 +249,19 @@ export function App({
     return (
       <Box flexDirection="column">
         <Box>
-          <Text color="green">
-            <Spinner type="dots" />
-          </Text>
-          <Text> Checking {n} repo(s) for exposure risk…</Text>
+          {colors ? (
+            <>
+              <Text color="green">
+                <Spinner type="dots" />
+              </Text>
+              <Text> Checking {n} repo(s) for exposure risk…</Text>
+            </>
+          ) : (
+            <Text>Checking… {n} repo(s) for exposure risk…</Text>
+          )}
         </Box>
         {protectedCount > 0 && (
-          <Text color="yellow">
+          <Text color={themeColor('yellow', colors)}>
             {protectedCount} repo(s) protected by .vizzyignore — hidden from public.
           </Text>
         )}
@@ -265,7 +273,7 @@ export function App({
     return (
       <Box flexDirection="column">
         {scanError && (
-          <Text color="red">
+          <Text color={themeColor('red', colors)}>
             ⚠ Scan incomplete: {scanError} — all repos marked needs-review.
           </Text>
         )}

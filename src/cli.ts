@@ -85,6 +85,12 @@ export interface CliFlags {
    * --public or --private.
    */
   unarchive?: boolean;
+  /**
+   * Accessible plain-text mode: disables all ANSI color output and replaces
+   * the ink-spinner with static text. Also honored via NO_COLOR env variable
+   * (any non-empty value disables color even without --plain).
+   */
+  plain?: boolean;
 }
 
 export function parseArgs(
@@ -151,6 +157,10 @@ export function parseArgs(
     .addOption(
       new Option('--unarchive', 'unarchive selected repos (restore write access; no exposure scan)')
         .conflicts(['public', 'private']),
+    )
+    .option(
+      '--plain',
+      'accessible plain-text mode: disable ANSI color output and replace the spinner with static text (also honored via NO_COLOR env)',
     );
 
   if (opts.exitOverride) program.exitOverride();
