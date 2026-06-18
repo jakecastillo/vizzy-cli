@@ -14,6 +14,23 @@ confirm, done. Inspired by the feel of `yarn upgrade-interactive`.
 > risk signals — and scales the confirmation to the risk; `--dry-run` previews any
 > change first.
 
+## Demo
+
+<img src="demo/vizzy.gif" alt="vizzy demo — safety skip leading, then interactive TUI" width="800">
+
+_The demo leads with vizzy skipping a DANGER repo (detected secret) automatically,
+then shows the interactive TUI flow. Render with `bash scripts/render-demo.sh`
+(requires [vhs](https://github.com/charmbracelet/vhs))._
+
+## Install
+
+| Method | Command |
+|---|---|
+| **npx** (no install) | `npx vizzy-cli` |
+| **npm global** | `npm i -g vizzy-cli` |
+| **gh extension** | `gh extension install jakecastillo/gh-vizzy` |
+| **Homebrew** | `brew install vizzy-cli` _(TODO: tap not yet published)_ |
+
 ## Requirements
 
 - Node.js ≥ 20

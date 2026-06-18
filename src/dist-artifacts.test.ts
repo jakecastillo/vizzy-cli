@@ -181,3 +181,163 @@ describe('README distribution sections', () => {
     expect(text).toMatch(/uses:\s*jakecastillo\/vizzy-cli/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// .github/workflows/release.yml — bead vizzy-cli-9cm.17
+// ---------------------------------------------------------------------------
+
+describe('.github/workflows/release.yml', () => {
+  it('file exists', () => {
+    expect(existsSync(root('.github', 'workflows', 'release.yml'))).toBe(true);
+  });
+
+  it('is valid YAML', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    expect(() => yamlLoad(text)).not.toThrow();
+  });
+
+  it('triggers on push tags v*', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    const doc = yamlLoad(text) as Record<string, unknown>;
+    const on = doc['on'] as Record<string, unknown>;
+    expect(on).toBeDefined();
+    const push = on['push'] as Record<string, unknown> | undefined;
+    expect(push).toBeDefined();
+    const tags = push!['tags'] as string[] | undefined;
+    expect(Array.isArray(tags)).toBe(true);
+    expect(tags!.some((t) => t.startsWith('v'))).toBe(true);
+  });
+
+  it('has id-token: write permission (OIDC)', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    const doc = yamlLoad(text) as Record<string, unknown>;
+    const perms = doc['permissions'] as Record<string, string> | undefined;
+    expect(perms).toBeDefined();
+    expect(perms!['id-token']).toBe('write');
+  });
+
+  it('has contents: read permission', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    const doc = yamlLoad(text) as Record<string, unknown>;
+    const perms = doc['permissions'] as Record<string, string> | undefined;
+    expect(perms!['contents']).toBe('read');
+  });
+
+  it('includes setup-node step', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    expect(text).toMatch(/actions\/setup-node/);
+  });
+
+  it('includes npm ci step', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    expect(text).toMatch(/npm ci/);
+  });
+
+  it('includes npm run build step', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    expect(text).toMatch(/npm run build/);
+  });
+
+  it('includes npm publish --provenance --access public', () => {
+    const text = readFileSync(root('.github', 'workflows', 'release.yml'), 'utf8');
+    expect(text).toMatch(/npm publish.*--provenance.*--access public|npm publish.*--access public.*--provenance/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// demo/vizzy.tape — bead vizzy-cli-9cm.17
+// ---------------------------------------------------------------------------
+
+describe('demo/vizzy.tape VHS script', () => {
+  it('file exists', () => {
+    expect(existsSync(root('demo', 'vizzy.tape'))).toBe(true);
+  });
+
+  it('has an Output line (specifies GIF destination)', () => {
+    const text = readFileSync(root('demo', 'vizzy.tape'), 'utf8');
+    expect(text).toMatch(/^Output\s+/m);
+  });
+
+  it('references demo/vizzy.gif as output', () => {
+    const text = readFileSync(root('demo', 'vizzy.tape'), 'utf8');
+    expect(text).toMatch(/vizzy\.gif/);
+  });
+
+  it('leads with the safety-skip scenario (danger repo skipped)', () => {
+    const text = readFileSync(root('demo', 'vizzy.tape'), 'utf8');
+    // The danger / skip scenario should appear near the top (before the main flow)
+    const dangerIdx = text.search(/danger|skip|DANGER|SKIP/i);
+    expect(dangerIdx).toBeGreaterThan(-1);
+    expect(dangerIdx).toBeLessThan(500);
+  });
+
+  it('contains at least one Type or Key command', () => {
+    const text = readFileSync(root('demo', 'vizzy.tape'), 'utf8');
+    expect(text).toMatch(/^(Type|Key)\s+/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scripts/render-demo.sh — bead vizzy-cli-9cm.17
+// ---------------------------------------------------------------------------
+
+describe('scripts/render-demo.sh', () => {
+  it('file exists', () => {
+    expect(existsSync(root('scripts', 'render-demo.sh'))).toBe(true);
+  });
+
+  it('passes bash -n (syntax check)', () => {
+    const path = root('scripts', 'render-demo.sh');
+    expect(() => {
+      execSync(`bash -n ${JSON.stringify(path)}`, { stdio: 'pipe' });
+    }).not.toThrow();
+  });
+
+  it('contains shebang', () => {
+    const text = readFileSync(root('scripts', 'render-demo.sh'), 'utf8');
+    expect(text.startsWith('#!/')).toBe(true);
+  });
+
+  it('invokes vhs demo/vizzy.tape', () => {
+    const text = readFileSync(root('scripts', 'render-demo.sh'), 'utf8');
+    expect(text).toMatch(/vhs.*demo\/vizzy\.tape|vhs.*vizzy\.tape/);
+  });
+
+  it('passes shellcheck', () => {
+    const path = root('scripts', 'render-demo.sh');
+    expect(() => {
+      execSync(`shellcheck ${JSON.stringify(path)}`, { stdio: 'pipe' });
+    }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README demo slot + install matrix — bead vizzy-cli-9cm.17
+// ---------------------------------------------------------------------------
+
+describe('README demo slot and install matrix', () => {
+  it('contains an img tag or markdown image referencing demo/vizzy.gif', () => {
+    const text = readFileSync(root('README.md'), 'utf8');
+    expect(text).toMatch(/demo\/vizzy\.gif/);
+  });
+
+  it('contains npx vizzy-cli in install matrix', () => {
+    const text = readFileSync(root('README.md'), 'utf8');
+    expect(text).toMatch(/npx vizzy-cli/);
+  });
+
+  it('contains npm i -g vizzy-cli in install matrix', () => {
+    const text = readFileSync(root('README.md'), 'utf8');
+    expect(text).toMatch(/npm i -g vizzy-cli|npm install -g vizzy-cli/);
+  });
+
+  it('contains gh extension install in install matrix', () => {
+    const text = readFileSync(root('README.md'), 'utf8');
+    expect(text).toMatch(/gh extension install/);
+  });
+
+  it('contains brew or Homebrew reference in install matrix', () => {
+    const text = readFileSync(root('README.md'), 'utf8');
+    expect(text).toMatch(/brew|Homebrew/i);
+  });
+});
