@@ -65,9 +65,16 @@ export interface AssessOptions {
 /** Return true when pushedAt is more than staleMonths before now. */
 function isStale(pushedAt: string, staleMonths: number, now: Date): boolean {
   const pushed = new Date(pushedAt);
-  // Shift "now" back by staleMonths months to get the boundary
+  // Shift "now" back by staleMonths months to get the boundary. Set the day to 1
+  // before adjusting the month so setMonth can't overflow (e.g. "Feb 31" rolling
+  // forward to March would wrongly flag a repo pushed ~29 days ago as stale),
+  // then clamp the day to the last valid day of the target month.
   const boundary = new Date(now);
+  const day = boundary.getDate();
+  boundary.setDate(1);
   boundary.setMonth(boundary.getMonth() - staleMonths);
+  const lastDay = new Date(boundary.getFullYear(), boundary.getMonth() + 1, 0).getDate();
+  boundary.setDate(Math.min(day, lastDay));
   return pushed < boundary;
 }
 

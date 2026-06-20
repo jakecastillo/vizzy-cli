@@ -144,6 +144,17 @@ describe('stale finding', () => {
     const r = assess(makeRepo({ pushedAt: stale }), [], opts);
     expect(findingKinds(r)).toContain('stale');
   });
+
+  it('does not mis-flag a fresh repo on a long-month reference date', () => {
+    // "One month before the 31st" must land in February, not roll forward via
+    // setMonth overflow to early March. Local-time construction keeps the day=31
+    // condition deterministic regardless of the runner's timezone.
+    const now = new Date(2026, 2, 31); // local Mar 31
+    const opts: AssessOptions = { staleMonths: 1, highProfileStars: 10, now };
+    const pushed = new Date(2026, 2, 2).toISOString(); // local Mar 2 — ~29 days ago
+    const r = assess(makeRepo({ pushedAt: pushed }), [], opts);
+    expect(findingKinds(r)).not.toContain('stale');
+  });
 });
 
 // ---------------------------------------------------------------------------
