@@ -141,6 +141,18 @@ describe('action.yml composite action', () => {
     // And it is checked against the closed set before use.
     expect(text).toMatch(/(sarif|json|text)\|(sarif|json|text)\|(sarif|json|text)/);
   });
+
+  it('defines an org input and forwards it as --org when set', () => {
+    // Without --org the action audits the TOKEN OWNER's personal repos; the
+    // default GITHUB_TOKEN (github-actions[bot]) owns none, so the audit silently
+    // no-ops with a green check. An org input lets it audit real repositories.
+    const text = readFileSync(root('action.yml'), 'utf8');
+    const doc = yamlLoad(text) as Record<string, unknown>;
+    const inputs = doc.inputs as Record<string, unknown>;
+    expect(inputs['org']).toBeDefined();
+    expect(text).toMatch(/ORG:\s*\$\{\{\s*inputs\.org\s*\}\}/);
+    expect(text).toMatch(/--org "\$ORG"/);
+  });
 });
 
 // ---------------------------------------------------------------------------

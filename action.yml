@@ -11,6 +11,14 @@ inputs:
     description: Output format — sarif (default), json, or text.
     required: false
     default: sarif
+  org:
+    description: >
+      GitHub org to audit. Leave empty to audit the token owner's personal
+      repos — note the default GITHUB_TOKEN authenticates as
+      github-actions[bot], which owns no repos, so the audit would no-op; set
+      this (or supply a user PAT as github-token) to audit real repositories.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -28,12 +36,17 @@ runs:
         # script — GitHub substitutes ${{ }} into the script text before the
         # shell runs, so interpolating it directly is a script-injection hole.
         FORMAT: ${{ inputs.format }}
+        ORG: ${{ inputs.org }}
       run: |
         case "$FORMAT" in
           sarif|json|text) ;;
           *) echo "vizzy: invalid format '$FORMAT' (expected sarif, json, or text)" >&2; exit 2 ;;
         esac
-        npx vizzy-cli@latest --audit --format "$FORMAT" > results.sarif
+        if [ -n "$ORG" ]; then
+          npx vizzy-cli@latest --audit --org "$ORG" --format "$FORMAT" > results.sarif
+        else
+          npx vizzy-cli@latest --audit --format "$FORMAT" > results.sarif
+        fi
 
     # Upload the SARIF report to GitHub Code Scanning — only when the output is
     # actually SARIF (json/text formats produce a non-SARIF file and are skipped).
