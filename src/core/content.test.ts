@@ -77,6 +77,30 @@ describe('scanContent — AWS AK' + 'IA', () => {
 });
 
 // ---------------------------------------------------------------------------
+// AWS secret access key (the 40-char value — the credential that actually
+// matters, not just the AK' + 'IA id). Assignment-anchored to stay precise.
+// ---------------------------------------------------------------------------
+
+describe('scanContent — AWS secret access key', () => {
+  it('hits on aws_secret_access_key assignment with a 40-char value', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'aws');
+  });
+
+  it('hits on the upper-case env-var form', () => {
+    expectHit('AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"', 'aws');
+  });
+
+  it('does NOT hit on a placeholder value', () => {
+    expectClean('aws_secret_access_key=your_secret_key_here');
+  });
+
+  it('does NOT hit on a bare 40-char string with no aws_secret context', () => {
+    // A 40-char hex blob (e.g. a git SHA / hash) must not trip the rule.
+    expectClean('const hash = "0123456789abcdef0123456789abcdef01234567"');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GitHub tokens
 // ---------------------------------------------------------------------------
 

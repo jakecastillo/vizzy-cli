@@ -46,6 +46,17 @@ const RULES: ContentRule[] = [
     pattern: /\bAKIA[0-9A-Z]{16}\b/g,
   },
 
+  // ── AWS secret access key ────────────────────────────────────────────────
+  // The 40-char base64 secret — the credential that actually grants access (the
+  // AKIA id alone is useless). A bare 40-char base64 blob is common (git SHAs,
+  // hashes), so we anchor on an aws_secret_access_key assignment via lookbehind
+  // and match ONLY the value; that keeps false positives low. isPlaceholder
+  // still filters template values like "your_secret_key_here".
+  {
+    name: 'aws-secret',
+    pattern: /(?<=aws_secret_access_key["'\s:=]{1,8})[A-Za-z0-9/+]{40}\b/gi,
+  },
+
   // ── GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_) ─────────────────────────────
   // One of GitHub's single-letter token prefixes followed by ≥20 base62 chars:
   //   p = classic PAT, o = OAuth, u = user-to-server,
