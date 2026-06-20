@@ -108,12 +108,16 @@ export async function assessRepos(
       // but are NOT in the current HEAD tree (deduplication happens in assess()).
       let historyHits: string[] | undefined;
       let historyScanIncomplete = false;
+      let historyTruncated = false;
 
       if (opts.deep && opts.historyFetcher) {
         try {
           const histResult = await opts.historyFetcher(repo);
           // Filter to only sensitive filenames; assess() will further exclude HEAD paths.
           historyHits = histResult.paths.filter((p) => classifyPath(p, opts.scanRules) !== null);
+          // A capped commit window is NOT an all-clear: a secret committed then
+          // deleted beyond it would go unseen. Surface it like tree truncation.
+          historyTruncated = histResult.truncated;
         } catch {
           // A history-fetch error → mark scan-incomplete; never a silent clean.
           historyScanIncomplete = true;
@@ -149,6 +153,14 @@ export async function assessRepos(
             detail: 'A history fetch error occurred during the deep scan.',
           });
         }
+        if (historyTruncated) {
+          extraFindings.push({
+            kind: 'scan-incomplete',
+            severity: 'caution',
+            label: 'History window truncated — scan incomplete',
+            detail: 'Commit history was capped at the scan window; a secret committed then deleted beyond it would not be seen.',
+          });
+        }
         const findings = [...base.findings, ...extraFindings];
         // Re-derive severity and requiredConfirm to account for the new finding.
         const severity = findings.some((f) => f.severity === 'danger')
@@ -164,8 +176,9 @@ export async function assessRepos(
       // paths is null (fetch failed) or a normal non-truncated tree.
       const base = assess(repo, paths, opts, contentHits, historyHits);
 
-      // If a content or history fetch error occurred, inject scan-incomplete findings.
-      if (contentScanIncomplete || historyScanIncomplete) {
+      // If a content/history fetch error OR a truncated history window occurred,
+      // inject scan-incomplete findings — never a silent clean.
+      if (contentScanIncomplete || historyScanIncomplete || historyTruncated) {
         const extraFindings: Finding[] = [];
         if (contentScanIncomplete) {
           extraFindings.push({
@@ -181,6 +194,14 @@ export async function assessRepos(
             severity: 'caution',
             label: 'History fetch failed — scan incomplete',
             detail: 'A history fetch error occurred during the deep scan.',
+          });
+        }
+        if (historyTruncated) {
+          extraFindings.push({
+            kind: 'scan-incomplete',
+            severity: 'caution',
+            label: 'History window truncated — scan incomplete',
+            detail: 'Commit history was capped at the scan window; a secret committed then deleted beyond it would not be seen.',
           });
         }
         const findings = [...base.findings, ...extraFindings];

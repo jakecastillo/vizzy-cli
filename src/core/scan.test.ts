@@ -421,6 +421,43 @@ describe('assessRepos — history pass (deep=true, historyFetcher)', () => {
     expect(result!.severity).not.toBe('clean');
   });
 
+  it('truncated history window → scan-incomplete caution, not a silent all-clear', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    // HEAD tree is clean and the history filenames are benign — the ONLY reason
+    // to raise a flag is that the commit window was truncated, so a secret
+    // committed-then-deleted beyond it would go unseen.
+    const treeFetcher: TreeFetcher = async () => ({ paths: ['README.md'], truncated: false });
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({
+      paths: ['README.md'],
+      truncated: true,
+    });
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    const kinds = result!.findings.map((f) => f.kind);
+    expect(kinds).toContain('scan-incomplete');
+    expect(result!.severity).not.toBe('clean');
+  });
+
+  it('non-truncated clean history stays clean', async () => {
+    const repos = [makeRepo({ name: 'repo' })];
+    const treeFetcher: TreeFetcher = async () => ({ paths: ['README.md'], truncated: false });
+    const historyFetcher: HistoryFetcher = vi.fn().mockResolvedValue({
+      paths: ['README.md'],
+      truncated: false,
+    });
+
+    const [result] = await assessRepos(repos, treeFetcher, {
+      ...OPTS,
+      deep: true,
+      historyFetcher,
+    });
+    expect(result!.severity).toBe('clean');
+  });
+
   it('clean history (no sensitive filenames) → no secret-in-history finding', async () => {
     const repos = [makeRepo({ name: 'repo' })];
     const treeFetcher: TreeFetcher = async () => ({ paths: [], truncated: false });

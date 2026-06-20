@@ -178,6 +178,35 @@ describe('runCheck — danger finding', () => {
 // Tests — large file → exit 1 with item named
 // ---------------------------------------------------------------------------
 
+describe('runCheck — truncated history window', () => {
+  it('returns exit code 1 and a NOT READY history row when the commit window is capped', async () => {
+    // Otherwise-ready repo; the only problem is that history was truncated, so a
+    // secret committed-then-deleted beyond the window would not be seen. A clean
+    // history must NOT be reported as an all-clear.
+    const deps = makeDeps({
+      historyFetcher: async () => ({ paths: [], truncated: true }),
+    });
+    let code!: number;
+    const output = await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(1);
+    expect(output).toContain('NOT READY');
+    expect(output.toLowerCase()).toContain('history');
+  });
+
+  it('a non-truncated clean history keeps the repo READY', async () => {
+    const deps = makeDeps({
+      historyFetcher: async () => ({ paths: [], truncated: false }),
+    });
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(0);
+  });
+});
+
 describe('runCheck — large file', () => {
   it('returns exit code 1 when a blob is larger than 50 MB', async () => {
     const FIFTY_MB_PLUS_ONE = 50 * 1024 * 1024 + 1;
