@@ -310,6 +310,31 @@ describe('scanContent — placeholder "your" does not eat real tokens', () => {
 });
 
 // ---------------------------------------------------------------------------
+// JWT (eyJ<header>.eyJ<payload>.<signature>) — a common leaked credential in
+// .env / config / fixtures. The two eyJ-prefixed base64url segments (base64 of
+// '{"') make this a high-precision anchor.
+// ---------------------------------------------------------------------------
+
+describe('scanContent — JWT', () => {
+  it('hits on a 3-segment JWT', () => {
+    expectHit(
+      'TOKEN=' +
+        'ey' +
+        'JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+      'jwt',
+    );
+  });
+
+  it('does NOT hit on a single base64url segment (no dots)', () => {
+    expectClean('value=' + 'ey' + 'JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+  });
+
+  it('does NOT hit on benign dotted prose', () => {
+    expectClean('the quick.brown.fox jumps over the lazy dog');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Return shape
 // ---------------------------------------------------------------------------
 

@@ -102,6 +102,16 @@ const RULES: ContentRule[] = [
     pattern: /AIzaSy[A-Za-z0-9_-]{30,}/g,
   },
 
+  // ── JSON Web Token (JWT) ─────────────────────────────────────────────────
+  // header.payload.signature, where header and payload are base64url segments
+  // that begin with "eyJ" — the base64 encoding of '{"'. Requiring TWO such
+  // segments plus a signature makes this a high-precision anchor with very low
+  // false-positive risk on ordinary dotted text.
+  {
+    name: 'jwt',
+    pattern: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  },
+
   // ── PEM private key header ───────────────────────────────────────────────
   // Matches -----BEGIN <OPTIONAL TYPE> PRIVATE KEY-----
   // Covers RSA, EC, OPENSSH, PKCS#8 (bare "PRIVATE KEY"), etc.
