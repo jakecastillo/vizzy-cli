@@ -8,6 +8,7 @@ import { getToken } from './auth.js';
 import { makeOctokit, listOwnerRepos, listOrgRepos, makeSetter, listRepoTree, getBlobText, listHistoryFilenames, normalizeRepo } from './github.js';
 import { loadProtected } from './core/protected.js';
 import { loadScanRules } from './core/scanrules.js';
+import { parseRemote } from './core/remote.js';
 import { App } from './ui/App.js';
 import { runAudit } from './audit.js';
 import { runHeadless } from './headless.js';
@@ -106,18 +107,17 @@ if (flags.check !== undefined && flags.check !== false) {
     // Infer from git remote get-url origin
     try {
       const remote = execSync('git remote get-url origin', { encoding: 'utf8' }).trim();
-      // Parse SSH (git@github.com:owner/repo.git) or HTTPS (https://github.com/owner/repo.git)
-      const sshMatch = remote.match(/git@[^:]+:([^/]+\/[^.]+)(\.git)?$/);
-      const httpsMatch = remote.match(/https?:\/\/[^/]+\/([^/]+\/[^/.]+)(\.git)?$/);
-      const matched = sshMatch ?? httpsMatch;
-      if (!matched || !matched[1]) {
+      // Parse SSH (git@github.com:owner/repo.git) or HTTPS
+      // (https://github.com/owner/repo.git), keeping dots in the repo name.
+      const parsed = parseRemote(remote);
+      if (!parsed) {
         process.stderr.write(
           `vizzy check: could not parse owner/repo from git remote "${remote}".\n` +
             'Pass an explicit "owner/repo" argument: vizzy --check owner/repo\n',
         );
         process.exit(3);
       }
-      repoRef = matched[1];
+      repoRef = parsed;
     } catch {
       process.stderr.write(
         'vizzy check: could not read git remote origin from cwd.\n' +
