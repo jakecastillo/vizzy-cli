@@ -24,8 +24,16 @@ runs:
       shell: sh
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        # Pass the input through the environment, NOT interpolated into the run
+        # script — GitHub substitutes ${{ }} into the script text before the
+        # shell runs, so interpolating it directly is a script-injection hole.
+        FORMAT: ${{ inputs.format }}
       run: |
-        npx vizzy-cli@latest --audit --format ${{ inputs.format }} > results.sarif
+        case "$FORMAT" in
+          sarif|json|text) ;;
+          *) echo "vizzy: invalid format '$FORMAT' (expected sarif, json, or text)" >&2; exit 2 ;;
+        esac
+        npx vizzy-cli@latest --audit --format "$FORMAT" > results.sarif
 
     # Upload the SARIF report to GitHub Code Scanning — only when the output is
     # actually SARIF (json/text formats produce a non-SARIF file and are skipped).
