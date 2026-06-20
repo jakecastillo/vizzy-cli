@@ -1,5 +1,25 @@
+import { execSync } from 'node:child_process';
+
 export const delay = (ms = 25): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * True if `cmd` resolves on PATH. Use it to skip tests that shell out to an
+ * external tool (e.g. shellcheck) so the suite stays green where the tool isn't
+ * installed, while still running the check wherever it IS present. Probes with
+ * the platform's own resolver (`where` on Windows, `command -v` elsewhere) so it
+ * never executes the target binary.
+ */
+export function commandExists(cmd: string): boolean {
+  const probe =
+    process.platform === 'win32' ? `where ${cmd}` : `command -v ${cmd}`;
+  try {
+    execSync(probe, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Poll `predicate` until it returns true, or throw on timeout. Use this instead

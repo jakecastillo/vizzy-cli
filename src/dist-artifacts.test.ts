@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as yamlLoad } from 'js-yaml';
+import { commandExists } from './test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -303,7 +304,9 @@ describe('scripts/render-demo.sh', () => {
     expect(text).toMatch(/vhs.*demo\/vizzy\.tape|vhs.*vizzy\.tape/);
   });
 
-  it('passes shellcheck', () => {
+  // shellcheck is an optional dev tool: enforce it wherever it's installed (CI),
+  // skip it where it isn't (e.g. a Windows dev box) so the suite stays green.
+  it.skipIf(!commandExists('shellcheck'))('passes shellcheck', () => {
     const path = root('scripts', 'render-demo.sh');
     expect(() => {
       execSync(`shellcheck ${JSON.stringify(path)}`, { stdio: 'pipe' });
