@@ -226,6 +226,16 @@ describe('getBlobText', () => {
     const octokit = { rest: { git: { getBlob } } };
     await expect(getBlobText(octokit as never, 'me', 'r', 'badsha')).rejects.toThrow('blob not found');
   });
+
+  it('throws on a non-base64 encoding instead of scanning a >1MB blob as empty', async () => {
+    // GitHub returns encoding:'none' with empty content for blobs larger than
+    // ~1MB. Decoding that as base64 yields '' and would scan a huge file as
+    // silently clean — getBlobText must throw so the caller marks it
+    // scan-incomplete rather than green-lighting an unexamined file.
+    const getBlob = vi.fn().mockResolvedValue({ data: { content: '', encoding: 'none' } });
+    const octokit = { rest: { git: { getBlob } } };
+    await expect(getBlobText(octokit as never, 'me', 'r', 'bigsha')).rejects.toThrow();
+  });
 });
 
 describe('listHistoryFilenames', () => {

@@ -203,6 +203,13 @@ export async function getBlobText(
   sha: string,
 ): Promise<string> {
   const { data } = await octokit.rest.git.getBlob({ owner, repo, file_sha: sha });
+  // Blobs larger than ~1MB come back with encoding:'none' and empty content.
+  // Decoding that as base64 would yield '' and scan a huge file as silently
+  // clean, so refuse any non-base64 encoding and let the caller mark it
+  // scan-incomplete rather than green-light an unexamined blob.
+  if (data.encoding !== 'base64') {
+    throw new Error(`blob ${sha} returned unsupported encoding "${data.encoding}" (too large to scan inline)`);
+  }
   // GitHub wraps base64 at 60 characters with \n — strip all whitespace before decoding.
   const clean = (data.content as string).replace(/\s/g, '');
   return Buffer.from(clean, 'base64').toString('utf8');
