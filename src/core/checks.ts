@@ -17,6 +17,7 @@
 
 import { scanPaths } from './sensitive.js';
 import type { ExtraRules } from './sensitive.js';
+import { maskSecret } from './content.js';
 import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
 
@@ -135,7 +136,9 @@ export function assess(
         kind: 'secret-content',
         severity: 'danger',
         label: `Secret detected in content (${hit.rule})`,
-        detail: hit.match,
+        // Never store the raw secret on a finding — it flows to stdout, SARIF/
+        // JSON output and the on-disk drift snapshot. Persist a redacted form.
+        detail: maskSecret(hit.match),
       });
     }
   }

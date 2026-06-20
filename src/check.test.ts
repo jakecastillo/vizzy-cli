@@ -207,6 +207,27 @@ describe('runCheck — truncated history window', () => {
   });
 });
 
+describe('runCheck — detected secret is redacted in output', () => {
+  it('never echoes the raw secret to stdout, shows rule + masked form', async () => {
+    const RAW = 'AK' + 'IAIOSFODNN7EXAMPLE'; // valid AWS access-key-id shape
+    const deps = makeDeps({
+      treeFetch: async () => ({
+        items: [{ path: '.env', size: 64 }, ...READY_TREE],
+        truncated: false,
+      }),
+      contentFetcher: async (_repo, p) => (p === '.env' ? `AWS_KEY=${RAW}\n` : ''),
+    });
+    let code!: number;
+    const output = await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(1); // a real secret in content → NOT READY
+    expect(output).not.toContain(RAW); // the raw secret must never be printed
+    expect(output.toLowerCase()).toContain('redacted'); // masked form is shown
+    expect(output).toContain('aws-key'); // the rule name is still surfaced
+  });
+});
+
 describe('runCheck — large file', () => {
   it('returns exit code 1 when a blob is larger than 50 MB', async () => {
     const FIFTY_MB_PLUS_ONE = 50 * 1024 * 1024 + 1;
@@ -504,8 +525,10 @@ describe('runCheck — content scan (deep, always-on)', () => {
     // The content fetcher actually ran on the suspicious file...
     expect(fetched).toBe('.env.local');
     // ...and a content secret was reported (proves the secret-content path, not
-    // only the secret-file filename match).
-    expect(out).toContain('Secret in content');
+    // only the secret-file filename match)...
+    expect(out).toContain('Secret detected in content');
+    // ...with the raw secret redacted out of the output.
+    expect(out).not.toContain('AKIAIOSFODNN7EXAMPLE');
   });
 });
 

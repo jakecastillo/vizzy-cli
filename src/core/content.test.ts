@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { scanContent } from './content.js';
+import { scanContent, maskSecret } from './content.js';
 import type { ContentHit } from './content.js';
 
 // ---------------------------------------------------------------------------
@@ -331,6 +331,33 @@ describe('scanContent — JWT', () => {
 
   it('does NOT hit on benign dotted prose', () => {
     expectClean('the quick.brown.fox jumps over the lazy dog');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// maskSecret — redact a detected secret for display/persistence so the tool
+// never re-exposes what it found (stdout, CI logs, SARIF/JSON, drift snapshot).
+// ---------------------------------------------------------------------------
+
+describe('maskSecret', () => {
+  const RAW = 'AK' + 'IAIOSFODNN7EXAMPLE';
+
+  it('never contains any run of the raw secret', () => {
+    expect(maskSecret(RAW)).not.toContain(RAW);
+  });
+
+  it('includes the length for human context', () => {
+    expect(maskSecret(RAW)).toContain(String(RAW.length));
+  });
+
+  it('is deterministic for the same secret (drift-stable)', () => {
+    expect(maskSecret(RAW)).toBe(maskSecret(RAW));
+  });
+
+  it('distinguishes two different secrets of the same length', () => {
+    const a = 'AK' + 'IAIOSFODNN7EXAMPLE';
+    const b = 'AK' + 'IA1234567890ABCDEF'; // same length, different value
+    expect(maskSecret(a)).not.toBe(maskSecret(b));
   });
 });
 

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * core/content.ts — pure content-based secret scanner.
  *
@@ -145,6 +147,20 @@ function isPlaceholder(value: string): boolean {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Redact a detected secret for any user-facing or persisted surface.
+ *
+ * A secret scanner must never re-expose what it finds — not in stdout / CI
+ * logs, not in SARIF/JSON output, not in the on-disk drift snapshot. Returns a
+ * non-reversible sha256 prefix plus the length, with NO bytes of the secret
+ * itself, yet deterministic enough that drift detection can still tell two
+ * distinct secrets apart.
+ */
+export function maskSecret(value: string): string {
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 8);
+  return `redacted:${digest} (${value.length} chars)`;
+}
 
 /**
  * Scan arbitrary text for high-confidence secret patterns.

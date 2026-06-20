@@ -231,7 +231,10 @@ export async function runCheck(
     checks.push({ label: 'No secrets in file content', pass: true });
   } else {
     for (const f of contentFindings) {
-      checks.push({ label: `Secret in content (${f.detail ?? f.label})`, pass: false, detail: f.detail });
+      // f.label carries the rule name; f.detail is already redacted (no raw
+      // secret) — print both so the user knows what fired without re-leaking it.
+      const masked = f.detail ? ` — ${f.detail}` : '';
+      checks.push({ label: `${f.label}${masked}`, pass: false, detail: f.detail });
     }
   }
 
