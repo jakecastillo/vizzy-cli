@@ -43,5 +43,19 @@ jobs:
 
       - run: npm test
 
+      # Guard against a mis-publish: the tag (e.g. v0.4.0) MUST match the version
+      # in package.json. Without this, pushing v0.3.1 after a bump to 0.4.0 would
+      # publish 0.4.0 under a tag claiming 0.3.1 — signed with provenance and
+      # impossible to take back.
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG — refusing to publish"
+            exit 1
+          fi
+          echo "tag v$TAG matches package.json version $PKG"
+
       - name: Publish to npm (OIDC trusted publishing, provenance automatic)
         run: npm publish --access public --provenance

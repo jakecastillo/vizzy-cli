@@ -156,6 +156,40 @@ describe('action.yml composite action', () => {
 });
 
 // ---------------------------------------------------------------------------
+// .github/workflows/release.yml
+// ---------------------------------------------------------------------------
+
+describe('.github/workflows/release.yml', () => {
+  const relPath = (): string => root('.github', 'workflows', 'release.yml');
+
+  it('file exists and is valid YAML', () => {
+    expect(existsSync(relPath())).toBe(true);
+    expect(() => yamlLoad(readFileSync(relPath(), 'utf8'))).not.toThrow();
+  });
+
+  it('verifies the tag matches package.json version BEFORE publishing', () => {
+    const text = readFileSync(relPath(), 'utf8');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = yamlLoad(text) as any;
+    const steps = doc.jobs.release.steps as Array<Record<string, unknown>>;
+
+    const guardIdx = steps.findIndex(
+      (s) =>
+        typeof s.run === 'string' &&
+        /package\.json/.test(s.run) &&
+        /GITHUB_REF/.test(s.run),
+    );
+    const publishIdx = steps.findIndex(
+      (s) => typeof s.run === 'string' && /npm publish/.test(s.run),
+    );
+
+    expect(guardIdx).toBeGreaterThanOrEqual(0); // a tag/version guard exists
+    expect(publishIdx).toBeGreaterThanOrEqual(0);
+    expect(guardIdx).toBeLessThan(publishIdx); // and it runs before publish
+  });
+});
+
+// ---------------------------------------------------------------------------
 // examples/exposure-audit.yml
 // ---------------------------------------------------------------------------
 
