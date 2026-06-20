@@ -241,6 +241,28 @@ describe('scanContent — PEM private key headers', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Placeholder precision — "your" must only suppress a DELIMITED template word,
+// never an embedded substring of a real high-entropy token (suppressing a true
+// positive is the worst failure mode for a secret scanner).
+// ---------------------------------------------------------------------------
+
+describe('scanContent — placeholder "your" does not eat real tokens', () => {
+  it('hits a real gh' + 'p_ token whose random body contains the substring your', () => {
+    // body = abc + your + def...0123 (34 base62 chars); "your" is embedded
+    // between alphanumerics, NOT a delimited placeholder word.
+    expectHit('GITHUB_TOKEN=gh' + 'p_abcyourdefghijklmnopqrstuvwxyz0123', 'github');
+  });
+
+  it('hits a real Google key whose body contains the substring your', () => {
+    expectHit('GOOGLE_API_KEY=AI' + 'zaSyDyourABCDEFGHIJKLMNOPQRSTUVWXYZ', 'google');
+  });
+
+  it('still suppresses a delimited "your" placeholder (Slack -your-)', () => {
+    expectClean('SLACK_BOT_TOKEN=xo' + 'xb-your-bot-token');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Return shape
 // ---------------------------------------------------------------------------
 

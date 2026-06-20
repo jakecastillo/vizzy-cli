@@ -109,8 +109,12 @@ const RULES: ContentRule[] = [
  * (all-uppercase words, contains YOUR_, _HERE, _KEY_HERE, etc.).
  */
 function isPlaceholder(value: string): boolean {
-  // Common placeholder patterns used in templates
-  if (/your/i.test(value)) return true;
+  // "your" only signals a template when it is a DELIMITED word — bounded by a
+  // non-alphanumeric (e.g. YOUR_TOKEN, your-bot-token) or the string ends. A
+  // real high-entropy token whose random base62 body merely contains the
+  // letters y-o-u-r (e.g. ghp_abc**your**def…) must NOT be suppressed:
+  // dropping a true positive is worse than the false positive it prevents.
+  if (/(?:^|[^a-z0-9])your(?:[^a-z0-9]|$)/i.test(value)) return true;
   if (/_here$/i.test(value)) return true;
   if (/^AKIA[X_]{16}$/.test(value)) return true;
   return false;
