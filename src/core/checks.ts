@@ -17,6 +17,7 @@
 
 import { scanPaths } from './sensitive.js';
 import type { ExtraRules } from './sensitive.js';
+import { maskSecret } from './content.js';
 import type { ContentHit } from './content.js';
 import type { Repo } from '../types.js';
 
@@ -64,9 +65,16 @@ export interface AssessOptions {
 /** Return true when pushedAt is more than staleMonths before now. */
 function isStale(pushedAt: string, staleMonths: number, now: Date): boolean {
   const pushed = new Date(pushedAt);
-  // Shift "now" back by staleMonths months to get the boundary
+  // Shift "now" back by staleMonths months to get the boundary. Set the day to 1
+  // before adjusting the month so setMonth can't overflow (e.g. "Feb 31" rolling
+  // forward to March would wrongly flag a repo pushed ~29 days ago as stale),
+  // then clamp the day to the last valid day of the target month.
   const boundary = new Date(now);
+  const day = boundary.getDate();
+  boundary.setDate(1);
   boundary.setMonth(boundary.getMonth() - staleMonths);
+  const lastDay = new Date(boundary.getFullYear(), boundary.getMonth() + 1, 0).getDate();
+  boundary.setDate(Math.min(day, lastDay));
   return pushed < boundary;
 }
 
@@ -135,7 +143,9 @@ export function assess(
         kind: 'secret-content',
         severity: 'danger',
         label: `Secret detected in content (${hit.rule})`,
-        detail: hit.match,
+        // Never store the raw secret on a finding — it flows to stdout, SARIF/
+        // JSON output and the on-disk drift snapshot. Persist a redacted form.
+        detail: maskSecret(hit.match),
       });
     }
   }

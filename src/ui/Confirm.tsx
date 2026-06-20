@@ -313,8 +313,15 @@ function DangerConfirm({
         return;
       }
 
-      // No match: finalize with currently armed set
-      // Unarmed danger repos are excluded (skipped)
+      // No match. An EMPTY buffer is the documented "Enter to skip remaining"
+      // path → finalize with the currently armed set (unarmed danger repos are
+      // excluded). A NON-empty buffer is a typo of a danger repo name — the very
+      // slip the arm-by-name gate exists to catch — so clear it and stay in the
+      // arming phase instead of silently committing the batch to public.
+      if (trimmed !== '') {
+        setBuffer('');
+        return;
+      }
       const toApply = assessments
         .filter((a) => a.severity !== 'danger' || armed.has(a.repo.name))
         .map((a) => a.repo);

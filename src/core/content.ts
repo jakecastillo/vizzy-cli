@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * core/content.ts — pure content-based secret scanner.
  *
@@ -46,15 +48,31 @@ const RULES: ContentRule[] = [
     pattern: /\bAKIA[0-9A-Z]{16}\b/g,
   },
 
-  // ── GitHub PAT (Classic: ghp_) ───────────────────────────────────────────
-  // ghp_ followed by ≥20 base62 chars (letters + digits).
-  // Placeholder strings like "ghp_YOUR_TOKEN_HERE" contain underscores and
-  // uppercase-only words — the regex requires lowercase chars to be present
-  // which real tokens always have. We instead require ≥20 word chars and
-  // exclude the known placeholder literal via a negative lookahead.
+  // ── AWS secret access key ────────────────────────────────────────────────
+  // The 40-char base64 secret — the credential that actually grants access (the
+  // AKIA id alone is useless). A bare 40-char base64 blob is common (git SHAs,
+  // hashes), so we anchor on an aws_secret_access_key assignment via lookbehind
+  // and match ONLY the value; that keeps false positives low. isPlaceholder
+  // still filters template values like "your_secret_key_here".
+  {
+    name: 'aws-secret',
+    // Terminate with a negative lookahead, NOT \b: '+' and '/' are valid base64
+    // chars that ~3% of real secrets end in, and \b can't sit between a non-word
+    // char and a following non-word char (quote/space/EOL). The exact {40} length
+    // plus the lookbehind anchor still prevent matching a longer base64 blob.
+    pattern: /(?<=aws_secret_access_key["'\s:=]{1,8})[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+])/gi,
+  },
+
+  // ── GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_) ─────────────────────────────
+  // One of GitHub's single-letter token prefixes followed by ≥20 base62 chars:
+  //   p = classic PAT, o = OAuth, u = user-to-server,
+  //   s = server-to-server / Actions / app installation, r = refresh.
+  // All are live, exfiltratable credentials. Placeholders like
+  // "ghp_YOUR_TOKEN_HERE" contain underscores, so the ≥20 base62-char
+  // requirement (no underscores) already excludes them.
   {
     name: 'github-token',
-    pattern: /\bghp_[A-Za-z0-9]{20,}\b/g,
+    pattern: /\bgh[posur]_[A-Za-z0-9]{20,}\b/g,
   },
 
   // ── GitHub PAT (Fine-grained: github_pat_) ───────────────────────────────
@@ -90,6 +108,16 @@ const RULES: ContentRule[] = [
     pattern: /AIzaSy[A-Za-z0-9_-]{30,}/g,
   },
 
+  // ── JSON Web Token (JWT) ─────────────────────────────────────────────────
+  // header.payload.signature, where header and payload are base64url segments
+  // that begin with "eyJ" — the base64 encoding of '{"'. Requiring TWO such
+  // segments plus a signature makes this a high-precision anchor with very low
+  // false-positive risk on ordinary dotted text.
+  {
+    name: 'jwt',
+    pattern: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  },
+
   // ── PEM private key header ───────────────────────────────────────────────
   // Matches -----BEGIN <OPTIONAL TYPE> PRIVATE KEY-----
   // Covers RSA, EC, OPENSSH, PKCS#8 (bare "PRIVATE KEY"), etc.
@@ -109,8 +137,12 @@ const RULES: ContentRule[] = [
  * (all-uppercase words, contains YOUR_, _HERE, _KEY_HERE, etc.).
  */
 function isPlaceholder(value: string): boolean {
-  // Common placeholder patterns used in templates
-  if (/your/i.test(value)) return true;
+  // "your" only signals a template when it is a DELIMITED word — bounded by a
+  // non-alphanumeric (e.g. YOUR_TOKEN, your-bot-token) or the string ends. A
+  // real high-entropy token whose random base62 body merely contains the
+  // letters y-o-u-r (e.g. ghp_abc**your**def…) must NOT be suppressed:
+  // dropping a true positive is worse than the false positive it prevents.
+  if (/(?:^|[^a-z0-9])your(?:[^a-z0-9]|$)/i.test(value)) return true;
   if (/_here$/i.test(value)) return true;
   if (/^AKIA[X_]{16}$/.test(value)) return true;
   return false;
@@ -119,6 +151,20 @@ function isPlaceholder(value: string): boolean {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Redact a detected secret for any user-facing or persisted surface.
+ *
+ * A secret scanner must never re-expose what it finds — not in stdout / CI
+ * logs, not in SARIF/JSON output, not in the on-disk drift snapshot. Returns a
+ * non-reversible sha256 prefix plus the length, with NO bytes of the secret
+ * itself, yet deterministic enough that drift detection can still tell two
+ * distinct secrets apart.
+ */
+export function maskSecret(value: string): string {
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 8);
+  return `redacted:${digest} (${value.length} chars)`;
+}
 
 /**
  * Scan arbitrary text for high-confidence secret patterns.

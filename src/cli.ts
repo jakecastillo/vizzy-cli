@@ -152,7 +152,7 @@ export function parseArgs(
     )
     .addOption(
       new Option('--archive', 'archive selected repos (make read-only; reuses selection + apply UI; no exposure scan)')
-        .conflicts(['public', 'private']),
+        .conflicts(['public', 'private', 'unarchive']),
     )
     .addOption(
       new Option('--unarchive', 'unarchive selected repos (restore write access; no exposure scan)')

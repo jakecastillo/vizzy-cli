@@ -330,17 +330,9 @@ describe('Confirm — public target, danger batch (arm-by-name)', () => {
     );
     await delay();
 
-    // Danger repo: do NOT arm it (skip); just submit with Enter (or type something wrong)
-    // The user submits without arming danger repo — they skip to "arm" phase then submit
-    // For a mixed danger+caution batch, the user enters the arming mode:
-    // they can arm each danger repo individually by typing its name + Enter
-    // Skipping (not arming): type submit command without arming
-    // The mechanism: after arming phase, type 'public' to confirm remaining
-    // Since there's a danger repo, we need to arm it OR leave it unarmed
-    // To skip: just proceed without entering its name
-    // Submit without arming: type 'public' Enter
-    for (const ch of 'public') stdin.write(ch);
-    await delay();
+    // Leave the danger repo unarmed and skip it via the documented path: Enter
+    // on an empty buffer ("...or Enter to skip remaining"). The caution repo is
+    // applied; the unarmed danger repo is excluded.
     stdin.write(KEY.enter);
     await delay();
 
@@ -348,6 +340,52 @@ describe('Confirm — public target, danger batch (arm-by-name)', () => {
     const applied = (onConfirm as ReturnType<typeof vi.fn>).mock.calls[0][0] as Repo[];
     expect(applied.map((r) => r.name)).not.toContain('secret-repo');
     expect(applied.map((r) => r.name)).toContain('stale-repo');
+    unmount();
+  });
+
+  it('a typo of a danger repo name + Enter does NOT apply the batch — it re-prompts', async () => {
+    const danger = repo('secret-repo', 'private');
+    const caution = repo('stale-repo', 'private');
+    const plan = buildPlan('public', [danger, caution]);
+    const assessments = [dangerAssessment(danger), cautionAssessment(caution)];
+    const onConfirm = vi.fn();
+    const { stdin, lastFrame, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={onConfirm} />,
+    );
+    await delay();
+    // The user MEANT to arm "secret-repo" but fat-fingered the name. A near-miss
+    // is exactly what the arm-by-name gate exists to catch — it must NOT silently
+    // commit the rest of the batch to public.
+    for (const ch of 'secret-repX') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    expect(onConfirm).not.toHaveBeenCalled();
+    // Still in the arming phase, ready for another attempt.
+    expect(lastFrame()).toContain('arm');
+    unmount();
+  });
+
+  it('after a near-miss the buffer resets so the user can still arm correctly', async () => {
+    const danger = repo('secret-repo', 'private');
+    const plan = buildPlan('public', [danger]);
+    const assessments = [dangerAssessment(danger)];
+    const onConfirm = vi.fn();
+    const { stdin, unmount } = render(
+      <Confirm plan={plan} assessments={assessments} onConfirm={onConfirm} />,
+    );
+    await delay();
+    // Typo first (cleared, no-op), then type the exact name → arms + finalizes.
+    for (const ch of 'secret-repX') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    expect(onConfirm).not.toHaveBeenCalled();
+    for (const ch of 'secret-repo') stdin.write(ch);
+    await delay();
+    stdin.write(KEY.enter);
+    await delay();
+    expect(onConfirm).toHaveBeenCalledWith([danger]);
     unmount();
   });
 

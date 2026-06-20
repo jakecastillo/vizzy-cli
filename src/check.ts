@@ -162,10 +162,12 @@ export async function runCheck(
 
   // ── Deep history scan (always-on in vizzy check) ──────────────────────────
   let historyHits: string[] | undefined;
+  let historyTruncated = false;
   {
     try {
       const histResult = await deps.historyFetcher(repo);
       historyHits = histResult.paths.filter((p) => classifyPath(p, scanRules) !== null);
+      historyTruncated = histResult.truncated;
     } catch {
       // History fetch error is non-fatal for exit code — treat as scan-incomplete
     }
@@ -229,7 +231,10 @@ export async function runCheck(
     checks.push({ label: 'No secrets in file content', pass: true });
   } else {
     for (const f of contentFindings) {
-      checks.push({ label: `Secret in content (${f.detail ?? f.label})`, pass: false, detail: f.detail });
+      // f.label carries the rule name; f.detail is already redacted (no raw
+      // secret) — print both so the user knows what fired without re-leaking it.
+      const masked = f.detail ? ` — ${f.detail}` : '';
+      checks.push({ label: `${f.label}${masked}`, pass: false, detail: f.detail });
     }
   }
 
@@ -296,6 +301,13 @@ export async function runCheck(
   // Scan complete (no truncation)
   if (truncated) {
     checks.push({ label: 'Tree scan complete (not truncated)', pass: false, detail: 'Tree was truncated; scan may be incomplete' });
+  }
+  if (historyTruncated) {
+    checks.push({
+      label: 'History scan complete (not truncated)',
+      pass: false,
+      detail: 'Commit history was capped at the scan window; a secret committed then deleted beyond it would not be seen',
+    });
   }
 
   // ── Print checklist ────────────────────────────────────────────────────────

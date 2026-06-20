@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { scanContent } from './content.js';
+import { scanContent, maskSecret } from './content.js';
 import type { ContentHit } from './content.js';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +77,46 @@ describe('scanContent — AWS AK' + 'IA', () => {
 });
 
 // ---------------------------------------------------------------------------
+// AWS secret access key (the 40-char value — the credential that actually
+// matters, not just the AK' + 'IA id). Assignment-anchored to stay precise.
+// ---------------------------------------------------------------------------
+
+describe('scanContent — AWS secret access key', () => {
+  it('hits on aws_secret_access_key assignment with a 40-char value', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'aws');
+  });
+
+  it('hits on the upper-case env-var form', () => {
+    expectHit('AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"', 'aws');
+  });
+
+  it('does NOT hit on a placeholder value', () => {
+    expectClean('aws_secret_access_key=your_secret_key_here');
+  });
+
+  it('does NOT hit on a bare 40-char string with no aws_secret context', () => {
+    // A 40-char hex blob (e.g. a git SHA / hash) must not trip the rule.
+    expectClean('const hash = "0123456789abcdef0123456789abcdef01234567"');
+  });
+
+  // '+' and '/' are valid base64 chars, so ~3% of real AWS secrets end in one.
+  // The match terminator must not require a word boundary after them.
+  it('hits when the 40-char secret ends in +', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKE+', 'aws');
+  });
+
+  it('hits when the 40-char secret ends in /', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKE/', 'aws');
+  });
+
+  it('does NOT over-match a >40-char base64 value after the assignment', () => {
+    // A 50-char base64 blob is not an AWS secret (those are exactly 40); the
+    // exact-length anchor must reject it rather than matching its first 40 chars.
+    expectClean('aws_secret_access_key = ' + 'A'.repeat(50));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GitHub tokens
 // ---------------------------------------------------------------------------
 
@@ -104,6 +144,29 @@ describe('scanContent — GitHub tokens', () => {
 
   it('does NOT hit on plain GitHub URL', () => {
     expectClean('https://github.com/owner/repo is a public URL');
+  });
+
+  // GitHub also issues gho_ (OAuth), ghu_ (user-to-server), ghs_ (server-to-
+  // server / Actions / app installation) and ghr_ (refresh) tokens — all live,
+  // exfiltratable credentials, not just classic ghp_.
+  it('hits on gh' + 'o_ OAuth token', () => {
+    expectHit('token=gh' + 'o_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 's_ server-to-server token', () => {
+    expectHit('token=gh' + 's_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 'u_ user-to-server token', () => {
+    expectHit('token=gh' + 'u_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 'r_ refresh token', () => {
+    expectHit('token=gh' + 'r_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('does NOT hit on a short gh' + 'o_ placeholder', () => {
+    expectClean('token=gh' + 'o_short');
   });
 });
 
@@ -237,6 +300,80 @@ describe('scanContent — PEM private key headers', () => {
 
   it('does NOT hit on plain text mentioning private key docs', () => {
     expectClean('See the section on PRIVATE KEY management in the docs.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Placeholder precision — "your" must only suppress a DELIMITED template word,
+// never an embedded substring of a real high-entropy token (suppressing a true
+// positive is the worst failure mode for a secret scanner).
+// ---------------------------------------------------------------------------
+
+describe('scanContent — placeholder "your" does not eat real tokens', () => {
+  it('hits a real gh' + 'p_ token whose random body contains the substring your', () => {
+    // body = abc + your + def...0123 (34 base62 chars); "your" is embedded
+    // between alphanumerics, NOT a delimited placeholder word.
+    expectHit('GITHUB_TOKEN=gh' + 'p_abcyourdefghijklmnopqrstuvwxyz0123', 'github');
+  });
+
+  it('hits a real Google key whose body contains the substring your', () => {
+    expectHit('GOOGLE_API_KEY=AI' + 'zaSyDyourABCDEFGHIJKLMNOPQRSTUVWXYZ', 'google');
+  });
+
+  it('still suppresses a delimited "your" placeholder (Slack -your-)', () => {
+    expectClean('SLACK_BOT_TOKEN=xo' + 'xb-your-bot-token');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JWT (eyJ<header>.eyJ<payload>.<signature>) — a common leaked credential in
+// .env / config / fixtures. The two eyJ-prefixed base64url segments (base64 of
+// '{"') make this a high-precision anchor.
+// ---------------------------------------------------------------------------
+
+describe('scanContent — JWT', () => {
+  it('hits on a 3-segment JWT', () => {
+    expectHit(
+      'TOKEN=' +
+        'ey' +
+        'JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+      'jwt',
+    );
+  });
+
+  it('does NOT hit on a single base64url segment (no dots)', () => {
+    expectClean('value=' + 'ey' + 'JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+  });
+
+  it('does NOT hit on benign dotted prose', () => {
+    expectClean('the quick.brown.fox jumps over the lazy dog');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// maskSecret — redact a detected secret for display/persistence so the tool
+// never re-exposes what it found (stdout, CI logs, SARIF/JSON, drift snapshot).
+// ---------------------------------------------------------------------------
+
+describe('maskSecret', () => {
+  const RAW = 'AK' + 'IAIOSFODNN7EXAMPLE';
+
+  it('never contains any run of the raw secret', () => {
+    expect(maskSecret(RAW)).not.toContain(RAW);
+  });
+
+  it('includes the length for human context', () => {
+    expect(maskSecret(RAW)).toContain(String(RAW.length));
+  });
+
+  it('is deterministic for the same secret (drift-stable)', () => {
+    expect(maskSecret(RAW)).toBe(maskSecret(RAW));
+  });
+
+  it('distinguishes two different secrets of the same length', () => {
+    const a = 'AK' + 'IAIOSFODNN7EXAMPLE';
+    const b = 'AK' + 'IA1234567890ABCDEF'; // same length, different value
+    expect(maskSecret(a)).not.toBe(maskSecret(b));
   });
 });
 

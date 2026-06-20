@@ -90,6 +90,20 @@ export async function runArchive(deps: ArchiveDeps, flags: ArchiveFlags): Promis
     return 2;
   }
 
+  // Archive/unarchive has no interactive confirmation step, so --yes is the only
+  // safety gate. A selection without it must refuse rather than apply immediately
+  // — archiving makes repos read-only account-wide in one shot.
+  if (hasSelection && !flags.yes) {
+    const cmd = doArchive ? '--archive' : '--unarchive';
+    process.stderr.write(
+      `vizzy archive: ${cmd} applies immediately and has no interactive confirmation.\n` +
+        `Pass --yes to confirm:\n` +
+        `  vizzy ${cmd} --all-eligible --yes\n` +
+        `  vizzy ${cmd} --repos alpha,beta --yes\n`,
+    );
+    return 2;
+  }
+
   // ── 2. Load repos + compute eligible pool ────────────────────────────────
   const allRepos = await deps.loadRepos();
 

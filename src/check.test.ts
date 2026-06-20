@@ -178,6 +178,56 @@ describe('runCheck — danger finding', () => {
 // Tests — large file → exit 1 with item named
 // ---------------------------------------------------------------------------
 
+describe('runCheck — truncated history window', () => {
+  it('returns exit code 1 and a NOT READY history row when the commit window is capped', async () => {
+    // Otherwise-ready repo; the only problem is that history was truncated, so a
+    // secret committed-then-deleted beyond the window would not be seen. A clean
+    // history must NOT be reported as an all-clear.
+    const deps = makeDeps({
+      historyFetcher: async () => ({ paths: [], truncated: true }),
+    });
+    let code!: number;
+    const output = await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(1);
+    expect(output).toContain('NOT READY');
+    expect(output.toLowerCase()).toContain('history');
+  });
+
+  it('a non-truncated clean history keeps the repo READY', async () => {
+    const deps = makeDeps({
+      historyFetcher: async () => ({ paths: [], truncated: false }),
+    });
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(0);
+  });
+});
+
+describe('runCheck — detected secret is redacted in output', () => {
+  it('never echoes the raw secret to stdout, shows rule + masked form', async () => {
+    const RAW = 'AK' + 'IAIOSFODNN7EXAMPLE'; // valid AWS access-key-id shape
+    const deps = makeDeps({
+      treeFetch: async () => ({
+        items: [{ path: '.env', size: 64 }, ...READY_TREE],
+        truncated: false,
+      }),
+      contentFetcher: async (_repo, p) => (p === '.env' ? `AWS_KEY=${RAW}\n` : ''),
+    });
+    let code!: number;
+    const output = await captureStdout(async () => {
+      code = await runCheck('octocat/my-repo', deps, BASE_OPTS);
+    });
+    expect(code).toBe(1); // a real secret in content → NOT READY
+    expect(output).not.toContain(RAW); // the raw secret must never be printed
+    expect(output.toLowerCase()).toContain('redacted'); // masked form is shown
+    expect(output).toContain('aws-key'); // the rule name is still surfaced
+  });
+});
+
 describe('runCheck — large file', () => {
   it('returns exit code 1 when a blob is larger than 50 MB', async () => {
     const FIFTY_MB_PLUS_ONE = 50 * 1024 * 1024 + 1;
@@ -475,8 +525,10 @@ describe('runCheck — content scan (deep, always-on)', () => {
     // The content fetcher actually ran on the suspicious file...
     expect(fetched).toBe('.env.local');
     // ...and a content secret was reported (proves the secret-content path, not
-    // only the secret-file filename match).
-    expect(out).toContain('Secret in content');
+    // only the secret-file filename match)...
+    expect(out).toContain('Secret detected in content');
+    // ...with the raw secret redacted out of the output.
+    expect(out).not.toContain('AKIAIOSFODNN7EXAMPLE');
   });
 });
 

@@ -99,6 +99,40 @@ afterEach(() => {
 // Tests — --archive selects non-archived repos
 // ---------------------------------------------------------------------------
 
+describe('runArchive — requires --yes to apply', () => {
+  it('a selection without --yes must NOT archive anything and returns exit 2', async () => {
+    // Archive has no interactive confirmation path; --yes is the only safety
+    // gate. `vizzy --archive --all-eligible` without it must refuse, not
+    // bulk-archive every eligible repo (account-wide read-only) silently.
+    const spy = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps([makeRepo({ name: 'active', isArchived: false })], spy);
+
+    let code!: number;
+    const err = await captureStderr(async () => {
+      await captureStdout(async () => {
+        code = await runArchive(deps, { archive: true, allEligible: true });
+      });
+    });
+
+    expect(code).toBe(2);
+    expect(spy).not.toHaveBeenCalled();
+    expect(err.toLowerCase()).toContain('--yes');
+  });
+
+  it('the same selection WITH --yes applies and returns 0', async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps([makeRepo({ name: 'active', isArchived: false })], spy);
+
+    let code!: number;
+    await captureStdout(async () => {
+      code = await runArchive(deps, { archive: true, allEligible: true, yes: true });
+    });
+
+    expect(code).toBe(0);
+    expect(spy).toHaveBeenCalledWith('octocat', 'active', true);
+  });
+});
+
 describe('runArchive — --archive', () => {
   it('selects non-archived repos and calls setArchived with true', async () => {
     const active = makeRepo({ name: 'active-repo', isArchived: false });

@@ -26,5 +26,11 @@ jobs:
       - name: Run vizzy exposure audit
         uses: ./
         with:
+          # The default GITHUB_TOKEN authenticates as github-actions[bot], which
+          # owns no repos — so audit an org (below), or pass a user PAT here to
+          # audit a person's repos. Otherwise the audit silently finds nothing.
           github-token: ${{ secrets.GITHUB_TOKEN }}
           format: sarif
+          # Audit a whole org's public repos (read-only). Remove to audit the
+          # token owner's personal repos instead.
+          org: your-org
