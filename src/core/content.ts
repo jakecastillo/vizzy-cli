@@ -46,15 +46,16 @@ const RULES: ContentRule[] = [
     pattern: /\bAKIA[0-9A-Z]{16}\b/g,
   },
 
-  // ── GitHub PAT (Classic: ghp_) ───────────────────────────────────────────
-  // ghp_ followed by ≥20 base62 chars (letters + digits).
-  // Placeholder strings like "ghp_YOUR_TOKEN_HERE" contain underscores and
-  // uppercase-only words — the regex requires lowercase chars to be present
-  // which real tokens always have. We instead require ≥20 word chars and
-  // exclude the known placeholder literal via a negative lookahead.
+  // ── GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_) ─────────────────────────────
+  // One of GitHub's single-letter token prefixes followed by ≥20 base62 chars:
+  //   p = classic PAT, o = OAuth, u = user-to-server,
+  //   s = server-to-server / Actions / app installation, r = refresh.
+  // All are live, exfiltratable credentials. Placeholders like
+  // "ghp_YOUR_TOKEN_HERE" contain underscores, so the ≥20 base62-char
+  // requirement (no underscores) already excludes them.
   {
     name: 'github-token',
-    pattern: /\bghp_[A-Za-z0-9]{20,}\b/g,
+    pattern: /\bgh[posur]_[A-Za-z0-9]{20,}\b/g,
   },
 
   // ── GitHub PAT (Fine-grained: github_pat_) ───────────────────────────────

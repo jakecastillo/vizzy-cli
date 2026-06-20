@@ -105,6 +105,29 @@ describe('scanContent — GitHub tokens', () => {
   it('does NOT hit on plain GitHub URL', () => {
     expectClean('https://github.com/owner/repo is a public URL');
   });
+
+  // GitHub also issues gho_ (OAuth), ghu_ (user-to-server), ghs_ (server-to-
+  // server / Actions / app installation) and ghr_ (refresh) tokens — all live,
+  // exfiltratable credentials, not just classic ghp_.
+  it('hits on gh' + 'o_ OAuth token', () => {
+    expectHit('token=gh' + 'o_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 's_ server-to-server token', () => {
+    expectHit('token=gh' + 's_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 'u_ user-to-server token', () => {
+    expectHit('token=gh' + 'u_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('hits on gh' + 'r_ refresh token', () => {
+    expectHit('token=gh' + 'r_16C7e42F292c6912E7710c838347Ae178B4a', 'github');
+  });
+
+  it('does NOT hit on a short gh' + 'o_ placeholder', () => {
+    expectClean('token=gh' + 'o_short');
+  });
 });
 
 // ---------------------------------------------------------------------------
