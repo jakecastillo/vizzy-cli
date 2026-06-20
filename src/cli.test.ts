@@ -199,6 +199,12 @@ describe('parseArgs', () => {
     ).toThrow();
   });
 
+  it('--archive combined with --unarchive is rejected (opposing intents)', () => {
+    expect(() =>
+      parseArgs(['--archive', '--unarchive'], { exitOverride: true }),
+    ).toThrow();
+  });
+
   it('--unarchive combined with --public is rejected (exit 2)', () => {
     expect(() =>
       parseArgs(['--unarchive', '--public'], { exitOverride: true }),
