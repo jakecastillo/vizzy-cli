@@ -98,6 +98,22 @@ describe('scanContent — AWS secret access key', () => {
     // A 40-char hex blob (e.g. a git SHA / hash) must not trip the rule.
     expectClean('const hash = "0123456789abcdef0123456789abcdef01234567"');
   });
+
+  // '+' and '/' are valid base64 chars, so ~3% of real AWS secrets end in one.
+  // The match terminator must not require a word boundary after them.
+  it('hits when the 40-char secret ends in +', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKE+', 'aws');
+  });
+
+  it('hits when the 40-char secret ends in /', () => {
+    expectHit('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKE/', 'aws');
+  });
+
+  it('does NOT over-match a >40-char base64 value after the assignment', () => {
+    // A 50-char base64 blob is not an AWS secret (those are exactly 40); the
+    // exact-length anchor must reject it rather than matching its first 40 chars.
+    expectClean('aws_secret_access_key = ' + 'A'.repeat(50));
+  });
 });
 
 // ---------------------------------------------------------------------------

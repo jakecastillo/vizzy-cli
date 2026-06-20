@@ -56,7 +56,11 @@ const RULES: ContentRule[] = [
   // still filters template values like "your_secret_key_here".
   {
     name: 'aws-secret',
-    pattern: /(?<=aws_secret_access_key["'\s:=]{1,8})[A-Za-z0-9/+]{40}\b/gi,
+    // Terminate with a negative lookahead, NOT \b: '+' and '/' are valid base64
+    // chars that ~3% of real secrets end in, and \b can't sit between a non-word
+    // char and a following non-word char (quote/space/EOL). The exact {40} length
+    // plus the lookbehind anchor still prevent matching a longer base64 blob.
+    pattern: /(?<=aws_secret_access_key["'\s:=]{1,8})[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+])/gi,
   },
 
   // ── GitHub tokens (ghp_/gho_/ghu_/ghs_/ghr_) ─────────────────────────────
